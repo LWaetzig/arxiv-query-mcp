@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.2.0](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.1.1...v1.2.0) (2026-05-10)
+
+
+### Features
+
+* debugging release pipeline error ([8cb762a](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/8cb762a8bae9637455f4b99f4745afce7e89e880))
+
 ## [1.1.1](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.1.0...v1.1.1) (2026-05-10)
 
 ## 1.1.0 (2026-05-10)
