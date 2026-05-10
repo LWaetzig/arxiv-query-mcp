@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.2.2](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.2.1...v1.2.2) (2026-05-10)
+
+
+### Bug Fixes
+
+* debugging pipeline ([4f7eaa4](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/4f7eaa4270d04c7aa7bd5c726cde2bbeaf8c4e0b))
+
 ## [1.2.1](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.2.0...v1.2.1) (2026-05-10)
 
 
