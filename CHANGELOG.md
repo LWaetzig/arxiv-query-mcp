@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.1.1](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.1.0...v1.1.1) (2026-05-10)
+
 ## 1.1.0 (2026-05-10)
 
 
