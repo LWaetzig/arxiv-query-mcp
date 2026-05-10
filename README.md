@@ -42,7 +42,7 @@ pip install -e .
 
 ## Usage
 
-- Detailed documentation about single tools can be found [here](./docs/tool-references.md)
+- Detailed documentation about single tools can be found [here](https://personal-public-packages.gitlab.io/arxiv-query-mcp)
 
 ### Integration with Claude Desktop
 
