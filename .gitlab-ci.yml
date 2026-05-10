@@ -117,13 +117,11 @@ publish:testpypi:
     PYPI_ID_TOKEN:
       aud: testpypi
   script:
-    - |
-      TOKEN=$(curl --fail-with-body -s -X POST https://test.pypi.org/_/oidc/mint-token \
-        -H "Content-Type: application/json" \
-        -d "{\"token\":\"${PYPI_ID_TOKEN}\"}" \
-        | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
-    - poetry config repositories.testpypi https://test.pypi.org/legacy/
-    - poetry publish --repository testpypi -u __token__ -p "$TOKEN"
+    - echo "Token length:$(echo -n $PYPI_ID_TOKEN | wc -c)"
+    - RESPONSE=$(curl -s -X POST "https://pypi.org/_/oidc/mint-token" -H "Content-Type: application/json" -d "{\"token\":\"${PYPI_ID_TOKEN}\"}")
+    - echo "PyPI response $RESPONSE"
+    - TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+    - poetry publish -u __token__ -p "$TOKEN"
   rules: *on-publishable-branches
 
 publish:pypi:
@@ -145,91 +143,91 @@ publish:pypi:
   rules: *on-tag
 
 # Release: bump version, create tag, create GitLab release
-release:gitlab:
-  stage: release
-  before_script:
-    - npm install -g commit-and-tag-version --quiet
-    - git config --global user.email "${GITLAB_USER_EMAIL}"
-    - git config --global user.name "${GITLAB_USER_NAME}"
-    - git config --global --add safe.directory '*'
-    - echo "GL TOKEN is set" && test -n "$GL_TOKEN" && echo "Yes" || echo "no"
-    - git remote rm origin && git remote add origin https://oauth2:${GL_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}
-    - git tag -l | xargs -r git tag -d
-    - git reset --hard
-    - git clean -fd
-    - git fetch
-    - git checkout $CI_COMMIT_REF_NAME
-    - git reset --hard origin/$CI_COMMIT_REF_NAME
-    - git pull --ff-only origin $CI_COMMIT_REF_NAME
-  script:
-    - commit-and-tag-version --no-verify $RELEASE_ARGS
-        --commitUrlFormat "${CI_PROJECT_URL}/commit/{{hash}}"
-        --compareUrlFormat "${CI_PROJECT_URL}/compare/{{previousTag}}...{{currentTag}}"
-    - git push -o ci.skip origin $CI_COMMIT_REF_NAME
-    - git push origin --tags
-    - |
-      TAG=$(git describe --tags --abbrev=0)
-      NOTES=$(awk '/^## \[/{if(p)exit; p=1; next} p' CHANGELOG.md)
-      curl --fail-with-body -s -X POST \
-        -H "PRIVATE-TOKEN: ${GL_TOKEN}" \
-        -H "Content-Type: application/json" \
-        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases" \
-        -d "{
-          \"name\": \"${TAG}\",
-          \"tag_name\": \"${TAG}\",
-          \"description\": $(echo "$NOTES" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')
-        }"
-  rules: *on-main
+# release:gitlab:
+#   stage: release
+#   before_script:
+#     - npm install -g commit-and-tag-version --quiet
+#     - git config --global user.email "${GITLAB_USER_EMAIL}"
+#     - git config --global user.name "${GITLAB_USER_NAME}"
+#     - git config --global --add safe.directory '*'
+#     - echo "GL TOKEN is set" && test -n "$GL_TOKEN" && echo "Yes" || echo "no"
+#     - git remote rm origin && git remote add origin https://oauth2:${GL_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}
+#     - git tag -l | xargs -r git tag -d
+#     - git reset --hard
+#     - git clean -fd
+#     - git fetch
+#     - git checkout $CI_COMMIT_REF_NAME
+#     - git reset --hard origin/$CI_COMMIT_REF_NAME
+#     - git pull --ff-only origin $CI_COMMIT_REF_NAME
+#   script:
+#     - commit-and-tag-version --no-verify $RELEASE_ARGS
+#         --commitUrlFormat "${CI_PROJECT_URL}/commit/{{hash}}"
+#         --compareUrlFormat "${CI_PROJECT_URL}/compare/{{previousTag}}...{{currentTag}}"
+#     - git push -o ci.skip origin $CI_COMMIT_REF_NAME
+#     - git push origin --tags
+#     - |
+#       TAG=$(git describe --tags --abbrev=0)
+#       NOTES=$(awk '/^## \[/{if(p)exit; p=1; next} p' CHANGELOG.md)
+#       curl --fail-with-body -s -X POST \
+#         -H "PRIVATE-TOKEN: ${GL_TOKEN}" \
+#         -H "Content-Type: application/json" \
+#         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases" \
+#         -d "{
+#           \"name\": \"${TAG}\",
+#           \"tag_name\": \"${TAG}\",
+#           \"description\": $(echo "$NOTES" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')
+#         }"
+#   rules: *on-main
 
 # Mirror to GitHub & matching release
 # Required CI/CD variables:
 #   GITHUB_TOKEN  – PAT with "repo" scope
 #   GITHUB_REPO   – target in "owner/repo" format
-mirror:github:
-  stage: mirror
-  image: alpine:latest
-  needs: ["release:gitlab"]
-  variables:
-    GIT_STRATEGY: none
-  before_script:
-    - apk add --no-cache git
-  script:
-    - git clone --bare --tags "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}" repo
-    - cd repo
-    - git push --mirror "https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
-  rules: *on-main
+# mirror:github:
+#   stage: mirror
+#   image: alpine:latest
+#   needs: ["release:gitlab"]
+#   variables:
+#     GIT_STRATEGY: none
+#   before_script:
+#     - apk add --no-cache git
+#   script:
+#     - git clone --bare --tags "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}" repo
+#     - cd repo
+#     - git push --mirror "https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+#   rules: *on-main
 
-release:github:
-  stage: mirror
-  image: alpine:latest
-  needs: ["mirror:github"]
-  before_script:
-    - apk add --no-cache curl jq git
-    - git config --global --add safe.directory '*'
-    - git remote set-url origin https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}
-    - git fetch --tags
-  script:
-    - |
-      TAG=$(git describe --tags --abbrev=0)
-      NOTES=$(awk '/^## \[/{if(p)exit; p=1; next} p' CHANGELOG.md)
-      curl --fail-with-body -s -X POST \
-        -H "Authorization: token ${GITHUB_TOKEN}" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${GITHUB_REPO}/releases" \
-        -d "{
-          \"tag_name\": \"${TAG}\",
-          \"name\": \"${TAG}\",
-          \"body\": $(echo "$NOTES" | jq -Rs .)
-        }"
-  rules: *on-main
+# release:github:
+#   stage: mirror
+#   image: alpine:latest
+#   needs: ["mirror:github"]
+#   before_script:
+#     - apk add --no-cache curl jq git
+#     - git config --global --add safe.directory '*'
+#     - git remote set-url origin https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}
+#     - git fetch --tags
+#   script:
+#     - |
+#       TAG=$(git describe --tags --abbrev=0)
+#       NOTES=$(awk '/^## \[/{if(p)exit; p=1; next} p' CHANGELOG.md)
+#       curl --fail-with-body -s -X POST \
+#         -H "Authorization: token ${GITHUB_TOKEN}" \
+#         -H "Accept: application/vnd.github+json" \
+#         "https://api.github.com/repos/${GITHUB_REPO}/releases" \
+#         -d "{
+#           \"tag_name\": \"${TAG}\",
+#           \"name\": \"${TAG}\",
+#           \"body\": $(echo "$NOTES" | jq -Rs .)
+#         }"
+#   rules: *on-main
 
-# Docs (GitLab Pages)
-pages:
-  stage: pages
-  before_script:
-    - poetry install --no-root --with docs
-  script:
-    - poetry run sphinx-build -W -b html docs public
-  artifacts:
-    paths: [public]
-  rules: *on-main
+# # Docs (GitLab Pages)
+# pages:
+#   stage: pages
+#   before_script:
+#     - poetry install --no-root --with docs
+#   script:
+#     - poetry run sphinx-build -W -b html docs public
+#   artifacts:
+#     paths: [public]
+#   rules: *on-main
