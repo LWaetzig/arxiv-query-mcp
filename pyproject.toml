@@ -1,0 +1,71 @@
+[project]
+name = "arxiv-query-mcp"
+version = "0.0.0"
+description = "MCP server for querying, retrieving, and reading arXiv papers"
+requires-python = ">=3.12"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [ { name = "Lucas Waetzig", email = "development@waetzig.net" } ]
+keywords = ["arXiv", "mcp", "mcp-server", "search"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=4.0.0",
+    "ruff (>=0.15.12,<0.16.0)",
+    "mypy (>=2.0.0,<3.0.0)",
+]
+docs = [
+    "sphinx (>=9.1.0,<10.0.0)",
+    "sphinx-rtd-theme (>=3.1.0,<4.0.0)"
+]
+
+[project.urls]
+Homepage = "https://github.com/LWaetzig/arxiv-mcp"
+Repository = "https://github.com/LWaetzig/arxiv-mcp"
+Issues = "https://github.com/LWaetzig/arxiv-mcp/issues"
+Documentation = "https://personal-public-packages.gitlab.io/arxiv-query-mcp"
+
+[project.scripts]
+arxiv-query-mcp = "arxiv_query_mcp.server:main"
+
+[build-system]
+requires      = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+files = ["src", "tests"]
+pretty = true
+show_error_codes = true
+warn_unused_configs = true
+check_untyped_defs = true
+ignore_missing_imports = true
