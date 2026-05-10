@@ -135,7 +135,7 @@ publish:pypi:
       aud: pypi
   script:
     - |
-      RESPONSE=$(curl --fail-with-body -s -X POST https://pypi.org/_/oidc/mint-token/ \
+      RESPONSE=$(curl -s -X POST https://pypi.org/_/oidc/mint-token/ \
       -H "Content-Type: application/json" \
       -d "{\"token\":\"${PYPI_ID_TOKEN}\"}")
       echo "PyPI response: $RESPONSE"
