@@ -134,6 +134,7 @@ publish:pypi:
     PYPI_ID_TOKEN:
       aud: pypi
   script:
+    - echo "Token length:$(echo -n $PYPI_ID_TOKEN | wc -c)"
     - |
       RESPONSE=$(curl -s -X POST https://pypi.org/_/oidc/mint-token/ \
       -H "Content-Type: application/json" \
