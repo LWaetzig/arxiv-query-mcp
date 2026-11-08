@@ -3,14 +3,14 @@ arxiv-query-mcp
 
 An MCP (Model Context Protocol) server that gives AI assistants direct access to `arXiv <https://arxiv.org>`_.
 Search papers, retrieve full metadata, browse subject categories, and read paper text — all from any MCP-compatible client.
+Responses are cached and requests to arXiv are rate limited and retried automatically (see :doc:`caching`).
 
 .. code-block:: json
 
    {
      "mcpServers": {
        "arxiv": {
-         "command": "python",
-         "args": ["-m", "arxiv_query_mcp.server"]
+         "command": "arxiv-query-mcp"
        }
      }
    }
@@ -49,6 +49,7 @@ Search papers, retrieve full metadata, browse subject categories, and read paper
    :caption: Configuration
 
    configuration
+   caching
 
 .. toctree::
    :maxdepth: 2

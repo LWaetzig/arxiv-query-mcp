@@ -6,7 +6,8 @@ An MCP (Model Context Protocol) server that gives AI assistants direct access to
 1. [Features](#features)
 2. [Installation](#installation)
 3. [Usage](#usage)
-4. [Contributing](#contributing)
+4. [Configuration](#configuration)
+5. [Contributing](#contributing)
 
 ## Features
 
@@ -16,13 +17,17 @@ An MCP (Model Context Protocol) server that gives AI assistants direct access to
 - **Read paper text** — Fetch HTML-rendered paper content or fallback to abstracts with links
 - **Flexible formatting** — Response support for both markdown (human-readable) and JSON (programmatic)
 - **Pagination** — Handle large result sets with configurable limits and offsets
+- **Caching** — Two-tier cache (in-memory plus on-disk) so repeated queries and paper texts are served without hitting arXiv
+- **Polite to arXiv** — Cross-process request spacing, a concurrency cap, and automatic retries with back-off on `429`/`5xx` responses
 
 ## Installation
 
 ### Prerequisites
 
-- `Python 3.11` or later
-- Dependencies `mcp[cli]>=1.0.0`, `httpx>=0.27.0`, `pydantic>=2.0.0` (see [pyproject.toml](pyproject.toml)) (project uses `poetry` for dependency management)
+- `Python 3.12` or later
+- Dependencies `mcp[cli]>=2.3.0`, `httpx>=0.27.0`, `pydantic>=2.0.0`, `tenacity>=9.0`, `diskcache>=5.6`, `platformdirs>=4.0` (see [pyproject.toml](pyproject.toml)) (project uses `poetry` for dependency management)
+
+> **Upgrading from 1.x:** the server now requires the MCP Python SDK 2.x (`FastMCP` was renamed to `MCPServer`). The tool names and parameters are unchanged; only environments that pin `mcp<2` need to upgrade.
 
 ### Install from PyPI
 
@@ -33,8 +38,8 @@ pip install arxiv-query-mcp
 ### Build from Source
 
 ```bash
-git clone https://github.com/LWaetzig/google-scholar-mcp.git
-cd google-scholar-mcp
+git clone https://github.com/LWaetzig/arxiv-mcp.git
+cd arxiv-mcp
 pip install -e .
 ```
 
@@ -59,8 +64,7 @@ Add the `arxiv` entry under `mcpServers`, replacing the path with the absolute p
 {
   "mcpServers": {
     "arxiv": {
-      "command": "python",
-      "args": ["-m", "arxiv-query-mcp"]
+      "command": "arxiv-query-mcp"
     }
   }
 }
@@ -73,9 +77,53 @@ Restart Claude Desktop. You should see the arxiv tools available in the tool pic
 Any MCP client (e.g., Cline, Continue, or custom tools) can use this server. Configure the connection to:
 
 ```
-Command: python -m arxiv-query-mcp.server
+Command: arxiv-query-mcp
 Transport: stdio
 ```
+
+## Configuration
+
+The server works out of the box. Every setting can be overridden with an environment variable, which you can set in the `env` block of your MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "arxiv": {
+      "command": "arxiv-query-mcp",
+      "env": { "ARXIV_MCP_L2_TTL": "86400" }
+    }
+  }
+}
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `ARXIV_API_URL` | `https://export.arxiv.org/api/query` | arXiv Atom API endpoint |
+| `ARXIV_MCP_REQUEST_TIMEOUT` | `30` | Seconds before an HTTP request times out |
+| `ARXIV_MCP_MAX_FETCH_CHARS` | `10000` | Maximum characters returned by `arxiv_fetch_paper_text` |
+| `ARXIV_MCP_USER_AGENT` | `arxiv-query-mcp/<version> (…)` | `User-Agent` header sent to arXiv |
+| `ARXIV_MCP_CACHE_ENABLED` | `true` | Set to `false`, `0`, `no` or `off` to disable caching |
+| `ARXIV_MCP_CACHE_DIR` | platform cache dir | Directory of the on-disk cache (shared between server processes) |
+| `ARXIV_MCP_L1_TTL` | `300` | Seconds an entry stays in the in-memory cache |
+| `ARXIV_MCP_L2_TTL` | `14400` | Seconds an entry stays in the on-disk cache |
+| `ARXIV_MCP_NEGATIVE_TTL` | `60` | Seconds empty / not-found results are cached |
+| `ARXIV_MCP_L1_MAXSIZE` | `256` | Maximum entries in the in-memory cache (LRU) |
+| `ARXIV_MCP_RATE_LIMIT_ENABLED` | `true` | Set to `false` to disable request spacing |
+| `ARXIV_MCP_RATE_LIMIT_PERIOD` | `3` | Minimum seconds between arXiv requests, across all server processes |
+| `ARXIV_MCP_MAX_CONCURRENCY` | `2` | Maximum simultaneous in-flight requests per process |
+| `ARXIV_MCP_MAX_RETRIES` | `4` | Attempts per request before giving up |
+| `ARXIV_MCP_BACKOFF_BASE` | `1` | Initial retry back-off in seconds (doubles per attempt) |
+| `ARXIV_MCP_BACKOFF_MAX` | `30` | Upper bound for a single retry wait, including `Retry-After` |
+
+Invalid numeric values stop the server at startup with an error naming the variable.
+
+### How caching and rate limiting work
+
+- Lookups check memory first, then disk, and only then call arXiv. Concurrent identical requests share a single fetch.
+- Empty results use the shorter `ARXIV_MCP_NEGATIVE_TTL` so a transient miss doesn't stick around.
+- Failed requests are never cached.
+- Retries happen on timeouts, transport errors and `429`/`500`/`502`/`503`/`504`. A numeric `Retry-After` header is honoured (up to `ARXIV_MCP_BACKOFF_MAX`). Every attempt, including retries, respects the request spacing.
+- arXiv asks clients to make at most one request every 3 seconds; lowering `ARXIV_MCP_RATE_LIMIT_PERIOD` below that is not recommended.
 
 ## Contributing
 

@@ -9,4 +9,6 @@ Auto-generated reference documentation for all public modules.
    server
    models
    config
+   cache
+   ratelimit
    utils

@@ -5,6 +5,7 @@ Prerequisites
 -------------
 
 - **Python 3.12** or later
+- The MCP Python SDK **2.3** or later (installed automatically as ``mcp[cli]>=2.3.0``)
 - An MCP-compatible client (Claude Desktop, Cline, Continue, or any custom client)
 
 Install from PyPI
@@ -13,6 +14,12 @@ Install from PyPI
 .. code-block:: bash
 
    pip install arxiv-query-mcp
+
+.. note::
+
+   Version 2.0 moved to the MCP Python SDK 2.x, where ``FastMCP`` became
+   ``MCPServer``. The tool names and parameters are unchanged. Environments
+   that pin ``mcp<2`` must be upgraded.
 
 Install with Poetry (recommended)
 ----------------------------------
@@ -56,8 +63,7 @@ Add the server entry to your Claude Desktop configuration file:
    {
      "mcpServers": {
        "arxiv": {
-         "command": "python",
-         "args": ["-m", "arxiv_query_mcp.server"]
+         "command": "arxiv-query-mcp"
        }
      }
    }
@@ -67,7 +73,8 @@ Restart Claude Desktop. The arXiv tools appear in the tool picker automatically.
 .. note::
 
    If you installed with Poetry, use ``"command": "poetry"`` and
-   ``"args": ["run", "python", "-m", "arxiv_query_mcp.server"]`` instead.
+   ``"args": ["run", "arxiv-query-mcp"]`` instead. Settings such as the cache
+   directory can be passed through an ``"env"`` block; see :doc:`configuration`.
 
 Other MCP Clients
 ~~~~~~~~~~~~~~~~~
@@ -76,7 +83,7 @@ Any MCP client that supports stdio transport can connect to this server:
 
 .. code-block:: text
 
-   Command:   python -m arxiv_query_mcp.server
+   Command:   arxiv-query-mcp
    Transport: stdio
 
 ----
@@ -88,6 +95,5 @@ Building the Docs
 
    pip install "arxiv-query-mcp[docs]"
    # or: poetry install --with docs
-   cd docs
-   make html
-   open _build/html/index.html
+   sphinx-build -W -b html docs docs/_build/html
+   open docs/_build/html/index.html

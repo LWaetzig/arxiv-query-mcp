@@ -46,6 +46,11 @@ Return Values
    * - HTML version unavailable
      - Full abstract, metadata fields, and links to the abstract page and PDF.
 
+.. note::
+
+   Extracted text is cached (see :doc:`../caching`), so reading the same paper
+   again does not contact arXiv until the cache entry expires.
+
 .. tip::
 
    The 10,000-character limit is set by :attr:`~arxiv_query_mcp.config.Config.max_fetch_chars`.
