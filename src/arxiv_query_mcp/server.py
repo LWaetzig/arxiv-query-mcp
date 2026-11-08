@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 
+import diskcache
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
+from .cache import TwoTierCache
 from .config import Config
 from .models import (
     FetchPaperTextInput,
@@ -14,6 +16,7 @@ from .models import (
     ResponseFormat,
     SearchInput,
 )
+from .ratelimit import RateLimiter, resilient_get
 from .utils import (
     _author_line,
     _clean_id,
@@ -26,25 +29,39 @@ from .utils import (
 
 # MARK: Config
 
-config = Config()
+config = Config.from_env()
 _client: httpx.AsyncClient | None = None
+_cache: TwoTierCache | None = None
+_limiter: RateLimiter | None = None
+_disk_cache: diskcache.Cache | None = None
 
 
 @asynccontextmanager
-async def _lifespan(app: FastMCP):
-    """FastMCP lifespan: create and tear down the shared HTTP client.
+async def _lifespan(app: MCPServer):
+    """MCPServer lifespan: create and tear down the shared HTTP client and cache.
 
-    The client is stored in the module-level ``_client`` variable so all tool
-    functions can access it via :func:`_http` without requiring Context
-    injection in every signature.
+    The client, cache, and rate limiter are stored in module-level variables so
+    all tool functions can access them without requiring Context injection in
+    every signature.  The diskcache is closed on shutdown so no SQLite
+    connections are leaked.
     """
-    global _client
+    global _client, _cache, _limiter, _disk_cache
+    _disk_cache = diskcache.Cache(config.resolved_cache_dir)
+    _cache = TwoTierCache(config, _disk_cache)
+    _limiter = RateLimiter(config, _disk_cache)
     async with httpx.AsyncClient(
         follow_redirects=True,
         timeout=config.request_timeout,
+        headers={"User-Agent": config.user_agent},
     ) as client:
         _client = client
-        yield
+        try:
+            yield
+        finally:
+            _disk_cache.close()
+            _disk_cache = None
+            _cache = None
+            _limiter = None
 
 
 def _http() -> httpx.AsyncClient:
@@ -53,7 +70,7 @@ def _http() -> httpx.AsyncClient:
     return _client
 
 
-mcp = FastMCP("arxiv-query-mcp", lifespan=_lifespan)
+mcp = MCPServer("arxiv-query-mcp", lifespan=_lifespan)
 
 
 # MARK: Tools
@@ -109,6 +126,8 @@ async def arxiv_search(params: SearchInput) -> str:
             },
             config,
             _http(),
+            cache=_cache,
+            limiter=_limiter,
         )
 
         if not papers:
@@ -172,6 +191,8 @@ async def arxiv_get_paper(params: GetPaperInput) -> str:
             {"id_list": clean},
             config,
             _http(),
+            cache=_cache,
+            limiter=_limiter,
         )
 
         if not papers:
@@ -231,6 +252,8 @@ async def arxiv_list_by_category(params: ListByCategoryInput) -> str:
             },
             config,
             _http(),
+            cache=_cache,
+            limiter=_limiter,
         )
 
         if not papers:
@@ -292,25 +315,54 @@ async def arxiv_fetch_paper_text(params: FetchPaperTextInput) -> str:
         html_url = f"{config.arxiv_html_base}/{clean}"
         client = _http()
 
-        html_resp = await client.get(html_url)
+        # Fetch HTML through the resilient layer (retry on 429/5xx) and cache
+        # the extracted text so repeated calls skip the network entirely.
+        async def _fetch_html() -> str:
+            """Return stripped paper text, or '' when HTML is unavailable."""
+            if _cache is not None and _limiter is not None:
+                try:
+                    resp = await resilient_get(
+                        client, html_url, cfg=config, limiter=_limiter
+                    )
+                except httpx.HTTPStatusError:
+                    return ""
+                if resp.status_code == 200 and "text/html" in resp.headers.get(
+                    "content-type", ""
+                ):
+                    text = _strip_html(resp.text)
+                    return text if len(text) > 500 else ""
+                return ""
+            else:
+                # Fallback path used when lifespan has not run (e.g. unit tests
+                # that do not initialise _cache / _limiter).
+                resp = await client.get(html_url)
+                if resp.status_code == 200 and "text/html" in resp.headers.get(
+                    "content-type", ""
+                ):
+                    text = _strip_html(resp.text)
+                    return text if len(text) > 500 else ""
+                return ""
 
-        if html_resp.status_code == 200 and "text/html" in html_resp.headers.get(
-            "content-type", ""
-        ):
-            text = _strip_html(html_resp.text)
-            if len(text) > 500:
-                truncated = text[: config.max_fetch_chars]
-                suffix = (
-                    f"\n\n… [truncated at {config.max_fetch_chars} chars — full HTML: {html_url}]"
-                    if len(text) > config.max_fetch_chars
-                    else ""
-                )
-                return (
-                    f"# Paper Text: {clean}\nSource: {html_url}\n\n{truncated}{suffix}"
-                )
+        if _cache is not None:
+            html_text: str = await _cache.get_or_fetch(
+                ("html", html_url), _fetch_html
+            )
+        else:
+            html_text = await _fetch_html()
+
+        if html_text:
+            truncated = html_text[: config.max_fetch_chars]
+            suffix = (
+                f"\n\n… [truncated at {config.max_fetch_chars} chars — full HTML: {html_url}]"
+                if len(html_text) > config.max_fetch_chars
+                else ""
+            )
+            return f"# Paper Text: {clean}\nSource: {html_url}\n\n{truncated}{suffix}"
 
         # Fallback: return full abstract from API using same client
-        _, papers = await _fetch_arxiv({"id_list": clean}, config, client)
+        _, papers = await _fetch_arxiv(
+            {"id_list": clean}, config, client, cache=_cache, limiter=_limiter
+        )
         if not papers:
             return f"Error: Paper '{clean}' not found. Verify the ID with arxiv_search."
 

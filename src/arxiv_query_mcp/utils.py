@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 import re
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from .config import Config
+
+if TYPE_CHECKING:
+    from .cache import TwoTierCache
+    from .ratelimit import RateLimiter
 
 _NS: dict[str, str] = {
     "atom": "http://www.w3.org/2005/Atom",
@@ -107,18 +114,54 @@ def _parse_entry(entry: ET.Element, cfg: Config) -> dict:
     }
 
 
+def _parse_atom_response(
+    text: str,
+    cfg: Config,
+) -> tuple[int, list[dict]]:
+    """Parse an arXiv Atom API XML response body into structured data.
+
+    Args:
+        text: Raw XML response text from the arXiv API.
+        cfg: Server configuration providing base URLs for building paper links.
+
+    Returns:
+        A tuple of ``(total_results, papers)`` where ``papers`` is a list of
+        dicts produced by :func:`_parse_entry`.
+
+    Raises:
+        xml.etree.ElementTree.ParseError: If *text* is not valid XML.
+    """
+    root = ET.fromstring(text)
+    total_el = root.find(f"{{{_NS['opensearch']}}}totalResults")
+    total = int(total_el.text) if total_el is not None and total_el.text else 0
+    papers = [_parse_entry(e, cfg) for e in root.findall(f"{{{_NS['atom']}}}entry")]
+    return total, papers
+
+
 async def _fetch_arxiv(
-    params: dict,
+    params: dict[str, Any],
     cfg: Config,
     client: httpx.AsyncClient,
+    *,
+    cache: TwoTierCache | None = None,
+    limiter: RateLimiter | None = None,
 ) -> tuple[int, list[dict]]:
     """Call the arXiv Atom API and return parsed results.
+
+    When both *cache* and *limiter* are provided the call is routed through the
+    two-tier cache and the cross-process rate limiter with tenacity retry.
+    Otherwise a direct ``client.get`` is used (backwards-compatible path that
+    keeps unit tests simple when the resilience layer is not required).
 
     Args:
         params: Query parameters forwarded verbatim to the API
             (e.g. ``search_query``, ``id_list``, ``start``, ``max_results``).
         cfg: Server configuration (API URL, base URLs for links).
         client: Shared async HTTP client managed by the server lifespan.
+        cache: Optional :class:`~arxiv_query_mcp.cache.TwoTierCache` instance.
+            When ``None`` the caching layer is bypassed.
+        limiter: Optional :class:`~arxiv_query_mcp.ratelimit.RateLimiter`
+            instance.  When ``None`` the rate-limiting layer is bypassed.
 
     Returns:
         A tuple of ``(total_results, papers)`` where ``papers`` is a list of
@@ -128,13 +171,28 @@ async def _fetch_arxiv(
         httpx.HTTPStatusError: On non-2xx responses from arXiv.
         xml.etree.ElementTree.ParseError: If the response body is not valid XML.
     """
+    if cache is not None and limiter is not None:
+        from .ratelimit import resilient_get
+
+        cache_key: tuple[object, ...] = ("api", tuple(sorted(params.items())))
+        _limiter = limiter  # capture for closure
+
+        async def _do_fetch() -> tuple[int, list[dict]]:
+            response = await resilient_get(
+                client,
+                cfg.arxiv_api_url,
+                params=dict(params),
+                cfg=cfg,
+                limiter=_limiter,
+            )
+            return _parse_atom_response(response.text, cfg)
+
+        return await cache.get_or_fetch(cache_key, _do_fetch)
+
+    # Legacy / test path: direct HTTP call with no caching or rate limiting.
     response = await client.get(cfg.arxiv_api_url, params=params)
     response.raise_for_status()
-    root = ET.fromstring(response.text)
-    total_el = root.find(f"{{{_NS['opensearch']}}}totalResults")
-    total = int(total_el.text) if total_el is not None and total_el.text else 0
-    papers = [_parse_entry(e, cfg) for e in root.findall(f"{{{_NS['atom']}}}entry")]
-    return total, papers
+    return _parse_atom_response(response.text, cfg)
 
 
 def _handle_error(exc: Exception) -> str:
