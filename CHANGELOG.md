@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.0.0](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v2.0.0...v3.0.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Updating MCP cli version
+
+### Features
+
+* Updating MCP cli version ([574f819](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/574f819899613ea0cff8351e815a42d152eae6a1))
+
+
+### Bug Fixes
+
+* debugging pipeline [skip release] ([92bd2f8](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/92bd2f84c572891d70aba55b5c97d182b47cc36e))
+
 ## [2.0.0](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.3.1...v2.0.0) (2026-11-08)
 
 
