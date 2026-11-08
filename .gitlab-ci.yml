@@ -19,18 +19,18 @@ variables:
 default:
   image: nikolaik/python-nodejs:python3.12-nodejs20
   tags:
-    - pi
+    - homelab
 
 # Built-in security templates
 sast:
   stage: secret-detection
   tags:
-    - pi
+    - homelab
 
 secret_detection:
   stage: secret-detection
   tags:
-    - pi
+    - homelab
 
 # Reusable rule fragments
 .rules:
