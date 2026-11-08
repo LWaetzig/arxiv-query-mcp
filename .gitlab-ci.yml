@@ -119,12 +119,12 @@ publish:testpypi:
   script:
     - echo "Token length:$(echo -n $PYPI_ID_TOKEN | wc -c)"
     - |
-      RESPONSE=$(curl -s -X POST "https://pypi.org/_/oidc/mint-token" \
+      RESPONSE=$(curl -s -X POST "https://test.pypi.org/_/oidc/mint-token" \
       -H "Content-Type: application/json" \
       -d "{\"token\":\"${PYPI_ID_TOKEN}\"}")
-    - echo "PyPI response $RESPONSE"
     - TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
-    - poetry publish -u __token__ -p "$TOKEN"
+    - poetry config repositories.testpypi https://test.pypi.org/legacy/
+    - poetry publish -r testpypi -u __token__ -p "$TOKEN"
   rules: *on-publishable-branches
 
 publish:pypi:
@@ -140,7 +140,6 @@ publish:pypi:
       RESPONSE=$(curl -s -X POST https://pypi.org/_/oidc/mint-token \
       -H "Content-Type: application/json" \
       -d "{\"token\":\"${PYPI_ID_TOKEN}\"}")
-      echo "PyPI response: $RESPONSE"
       TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
     - poetry publish -u __token__ -p "$TOKEN"
   rules: *on-tag
