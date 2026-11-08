@@ -12,14 +12,12 @@ DEFAULT_SKILL_URL = (
     "skills/arxiv-query-mcp/SKILL.md"
 )
 
-
 def _default_user_agent() -> str:
     """Return the default User-Agent string including the package version."""
     return (
         f"arxiv-query-mcp/{__version__} (https://github.com/LWaetzig/arxiv-query-mcp; "
         "MCP server for academic paper search)"
     )
-
 
 @dataclass(frozen=True)
 class Config:
