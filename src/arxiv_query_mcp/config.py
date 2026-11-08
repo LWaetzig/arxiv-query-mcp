@@ -8,7 +8,7 @@ from . import __version__
 
 
 DEFAULT_SKILL_URL = (
-    "https://raw.githubusercontent.com/LWaetzig/arxiv-mcp/main/"
+    "https://raw.githubusercontent.com/LWaetzig/arxiv-query-mcp/main/"
     "skills/arxiv-query-mcp/SKILL.md"
 )
 
@@ -16,7 +16,7 @@ DEFAULT_SKILL_URL = (
 def _default_user_agent() -> str:
     """Return the default User-Agent string including the package version."""
     return (
-        f"arxiv-query-mcp/{__version__} (https://github.com/LWaetzig/arxiv-mcp; "
+        f"arxiv-query-mcp/{__version__} (https://github.com/LWaetzig/arxiv-query-mcp; "
         "MCP server for academic paper search)"
     )
 

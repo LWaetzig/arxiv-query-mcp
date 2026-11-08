@@ -42,9 +42,9 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/LWaetzig/arxiv-mcp"
-Repository = "https://github.com/LWaetzig/arxiv-mcp"
-Issues = "https://github.com/LWaetzig/arxiv-mcp/issues"
+Homepage = "https://github.com/LWaetzig/arxiv-query-mcp"
+Repository = "https://github.com/LWaetzig/arxiv-query-mcp"
+Issues = "https://github.com/LWaetzig/arxiv-query-mcp/issues"
 Documentation = "https://personal-public-packages.gitlab.io/arxiv-query-mcp"
 
 [project.scripts]

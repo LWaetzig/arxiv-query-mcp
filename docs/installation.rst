@@ -33,8 +33,8 @@ Build from Source
 
 .. code-block:: bash
 
-   git clone https://github.com/LWaetzig/arxiv-mcp.git
-   cd arxiv-mcp
+   git clone https://github.com/LWaetzig/arxiv-query-mcp.git
+   cd arxiv-query-mcp
    pip install -e .
 
 ----

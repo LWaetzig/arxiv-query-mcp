@@ -93,7 +93,7 @@ html_theme_options = {
 html_context = {
     "display_github": True,
     "github_user": "LWaetzig",
-    "github_repo": "arxiv-mcp",
+    "github_repo": "arxiv-query-mcp",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }

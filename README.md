@@ -38,8 +38,8 @@ pip install arxiv-query-mcp
 ### Build from Source
 
 ```bash
-git clone https://github.com/LWaetzig/arxiv-mcp.git
-cd arxiv-mcp
+git clone https://github.com/LWaetzig/arxiv-query-mcp.git
+cd arxiv-query-mcp
 pip install -e .
 ```
 

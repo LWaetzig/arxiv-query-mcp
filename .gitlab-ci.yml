@@ -55,6 +55,14 @@ secret_detection:
     - *no-mr
     - if: '$CI_COMMIT_BRANCH == "main"'
 
+  # Like on_main, but a "[skip release]" marker anywhere in the commit message
+  # suppresses the version bump, tag and releases for that push.
+  on_main_release: &on-main-release
+    - *no-mr
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_COMMIT_MESSAGE =~ /\[skip release\]/'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
 # Lint
 lint:
   stage: lint
@@ -179,7 +187,7 @@ release:gitlab:
           \"tag_name\": \"${TAG}\",
           \"description\": $(echo "$NOTES" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')
         }"
-  rules: *on-main
+  rules: *on-main-release
 
 # Mirror to GitHub & matching release
 # Required CI/CD variables:
@@ -188,15 +196,33 @@ release:gitlab:
 mirror:github:
   stage: mirror
   image: alpine:latest
-  needs: ["release:gitlab"]
+  needs:
+    - job: release:gitlab
+      optional: true  # absent when the push carries [skip release]
   variables:
     GIT_STRATEGY: none
   before_script:
     - apk add --no-cache git
   script:
+    - |
+      # Fail early with a clear reason instead of git's "could not read Username".
+      if [ -z "$GITHUB_TOKEN" ]; then
+        echo "GITHUB_TOKEN is empty. Check that the CI/CD variable exists in this project and, if it is 'Protected', that this ref ($CI_COMMIT_REF_NAME) is a protected branch."
+        exit 1
+      fi
+      REPO=$(printf '%s' "$GITHUB_REPO" | tr -d '[:space:]')
+      REPO=${REPO%.git}
+      if ! printf '%s' "$REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+        echo "GITHUB_REPO must look like owner/repo (value length: ${#GITHUB_REPO}, normalised length: ${#REPO})."
+        exit 1
+      fi
     - git clone --bare --tags "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}" repo
     - cd repo
-    - git push --mirror "https://${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+    # Send credentials as a header so they survive a redirect; credentials
+    # embedded in the URL are dropped by git when the server redirects.
+    - |
+      AUTH=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
+      git -c http.extraheader="Authorization: Basic ${AUTH}" push --mirror "https://github.com/${REPO}.git"
   rules: *on-main
 
 release:github:
@@ -215,13 +241,13 @@ release:github:
       curl --fail-with-body -s -X POST \
         -H "Authorization: token ${GITHUB_TOKEN}" \
         -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${GITHUB_REPO}/releases" \
+        "https://api.github.com/repos/$(printf '%s' "${GITHUB_REPO%.git}" | tr -d '[:space:]')/releases" \
         -d "{
           \"tag_name\": \"${TAG}\",
           \"name\": \"${TAG}\",
           \"body\": $(echo "$NOTES" | jq -Rs .)
         }"
-  rules: *on-main
+  rules: *on-main-release
 
 # Docs (GitLab Pages)
 pages:
