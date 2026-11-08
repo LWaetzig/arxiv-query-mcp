@@ -70,7 +70,37 @@ def _http() -> httpx.AsyncClient:
     return _client
 
 
-mcp = MCPServer("arxiv-query-mcp", lifespan=_lifespan)
+def _build_instructions(cfg: Config) -> str:
+    """Build the server instructions shown to clients when they connect.
+
+    Args:
+        cfg: Server configuration; ``skill_url`` decides whether the skill
+            notice is included.
+
+    Returns:
+        A short description of the server, followed by a pointer to the agent
+        skill when ``cfg.skill_url`` is set.
+    """
+    text = (
+        "Read-only access to arXiv: search papers, get metadata by ID, browse "
+        "subject categories, and read paper text. Start with arxiv_search, "
+        "confirm candidates with arxiv_get_paper, and use "
+        "arxiv_fetch_paper_text only for papers that must be read in depth."
+    )
+    if cfg.skill_url:
+        text += (
+            "\n\nAgent skill: a SKILL.md with guidance on when and how to use "
+            f"these tools is available at {cfg.skill_url}. If your client "
+            "supports skills or can fetch URLs, read it before your first call."
+        )
+    return text
+
+
+mcp = MCPServer(
+    "arxiv-query-mcp",
+    instructions=_build_instructions(config),
+    lifespan=_lifespan,
+)
 
 
 # MARK: Tools

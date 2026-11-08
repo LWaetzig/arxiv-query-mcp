@@ -58,6 +58,18 @@ Connection and output
      - ``arxiv-query-mcp/<version> (…)``
      - ``User-Agent`` header sent with every request
 
+.. list-table::
+   :header-rows: 1
+   :widths: 28 22 50
+
+   * - Environment variable
+     - Default
+     - Description
+   * - ``ARXIV_MCP_SKILL_URL``
+     - GitHub raw URL of ``skills/arxiv-query-mcp/SKILL.md``
+     - URL of the agent skill, advertised to clients in the server instructions
+       (see :ref:`agent-skill`). Set to an empty string to disable the notice.
+
 The URL prefixes ``arxiv_abs_base``, ``arxiv_html_base`` and ``arxiv_pdf_base``
 (``https://arxiv.org/abs``, ``/html`` and ``/pdf``) are fixed defaults and have
 no environment variable.
@@ -129,6 +141,26 @@ Rate limiting and retries
    being blocked.
 
 ----
+
+.. _agent-skill:
+
+Agent skill
+-----------
+
+The repository ships an agent skill, ``skills/arxiv-query-mcp/SKILL.md``, that
+explains when and how to use the tools: query syntax, search strategy,
+pagination, and error handling. The server advertises its URL in the MCP server
+*instructions*, which clients show to the agent when it connects, for example:
+
+.. code-block:: text
+
+   Agent skill: a SKILL.md with guidance on when and how to use these tools is
+   available at https://raw.githubusercontent.com/.../SKILL.md. If your client
+   supports skills or can fetch URLs, read it before your first call.
+
+Point ``ARXIV_MCP_SKILL_URL`` at your own copy to customise the guidance, or set
+it to an empty string to remove the notice. To install the skill permanently,
+copy the file into your client's skills directory.
 
 Programmatic configuration
 --------------------------

@@ -1,6 +1,8 @@
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import arxiv_query_mcp.server as _server_module
 from arxiv_query_mcp.server import (
     arxiv_search,
     arxiv_get_paper,
@@ -294,3 +296,34 @@ async def test_arxiv_fetch_paper_text_not_found(_init_http_client):
         result = await arxiv_fetch_paper_text(params)
 
         assert "not found" in result
+
+
+# ---- server instructions ---------------------------------------------------
+
+
+def test_instructions_advertise_skill_url():
+    """The server instructions point agents at the configured SKILL.md."""
+    from arxiv_query_mcp.config import Config
+
+    text = _server_module._build_instructions(Config(skill_url="https://x.test/SKILL.md"))
+    assert "https://x.test/SKILL.md" in text
+    assert "SKILL.md" in text
+
+
+def test_instructions_without_skill_url_omit_notice():
+    """An empty skill_url removes the skill notice."""
+    from arxiv_query_mcp.config import Config
+
+    text = _server_module._build_instructions(Config(skill_url=""))
+    assert "SKILL.md" not in text
+    assert "arxiv_search" in text
+
+
+def test_server_exposes_instructions():
+    """The live server object carries the instructions with the default skill URL."""
+    from arxiv_query_mcp.config import DEFAULT_SKILL_URL
+
+    instructions = _server_module.mcp.instructions
+    assert instructions is not None
+    assert "arxiv_search" in instructions
+    assert DEFAULT_SKILL_URL in instructions

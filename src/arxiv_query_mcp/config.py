@@ -7,6 +7,12 @@ from dataclasses import dataclass, field
 from . import __version__
 
 
+DEFAULT_SKILL_URL = (
+    "https://raw.githubusercontent.com/LWaetzig/arxiv-mcp/main/"
+    "skills/arxiv-query-mcp/SKILL.md"
+)
+
+
 def _default_user_agent() -> str:
     """Return the default User-Agent string including the package version."""
     return (
@@ -49,6 +55,9 @@ class Config:
         user_agent: User-Agent header sent with every outgoing request.
         cache_enabled: When False the cache layer is a transparent pass-through.
         rate_limit_enabled: When False rate limiting and the semaphore are skipped.
+        skill_url: URL of the agent ``SKILL.md`` that explains how and when to
+            use this server.  It is advertised to clients in the server
+            instructions.  An empty string disables the notice.
     """
 
     # ---- existing fields ----
@@ -73,6 +82,7 @@ class Config:
     user_agent: str = field(default_factory=_default_user_agent)
     cache_enabled: bool = True
     rate_limit_enabled: bool = True
+    skill_url: str = DEFAULT_SKILL_URL
 
     @property
     def resolved_cache_dir(self) -> str:
@@ -108,7 +118,7 @@ class Config:
             ``ARXIV_MCP_BACKOFF_BASE``, ``ARXIV_MCP_BACKOFF_MAX``,
             ``ARXIV_MCP_USER_AGENT``, ``ARXIV_MCP_CACHE_ENABLED``,
             ``ARXIV_MCP_RATE_LIMIT_ENABLED``, ``ARXIV_MCP_REQUEST_TIMEOUT``,
-            ``ARXIV_MCP_MAX_FETCH_CHARS``.
+            ``ARXIV_MCP_MAX_FETCH_CHARS``, ``ARXIV_MCP_SKILL_URL``.
 
         Returns:
             A fully populated, immutable :class:`Config` instance.
@@ -174,4 +184,5 @@ class Config:
             rate_limit_enabled=_bool(
                 "ARXIV_MCP_RATE_LIMIT_ENABLED", defaults.rate_limit_enabled
             ),
+            skill_url=_str("ARXIV_MCP_SKILL_URL", defaults.skill_url),
         )

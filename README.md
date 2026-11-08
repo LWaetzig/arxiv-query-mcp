@@ -117,6 +117,10 @@ The server works out of the box. Every setting can be overridden with an environ
 
 Invalid numeric values stop the server at startup with an error naming the variable.
 
+### Agent skill
+
+The repository ships an agent skill, [`skills/arxiv-query-mcp/SKILL.md`](skills/arxiv-query-mcp/SKILL.md), that explains when and how to use the tools (query syntax, search strategy, pagination, error handling). The server advertises its URL in the MCP server instructions, which clients show to the agent when it connects, so agents that support skills or can fetch URLs can pick it up automatically. Copy the file into your client's skills directory (e.g. `~/.claude/skills/arxiv-query-mcp/`) to install it permanently.
+
 ### How caching and rate limiting work
 
 - Lookups check memory first, then disk, and only then call arXiv. Concurrent identical requests share a single fetch.

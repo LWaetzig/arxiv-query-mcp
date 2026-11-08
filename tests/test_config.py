@@ -5,6 +5,7 @@ from arxiv_query_mcp import __version__
 from arxiv_query_mcp.config import Config
 
 _ENV_VARS = [
+    "ARXIV_MCP_SKILL_URL",
     "ARXIV_API_URL",
     "ARXIV_MCP_CACHE_DIR",
     "ARXIV_MCP_L1_TTL",
@@ -101,3 +102,16 @@ def test_resolved_cache_dir_prefers_explicit_value(tmp_path):
 def test_resolved_cache_dir_default_is_non_empty():
     """Without cache_dir a platform default path is used."""
     assert "arxiv-query-mcp" in Config().resolved_cache_dir
+
+
+def test_skill_url_default_points_to_skill_md():
+    """The default skill URL ends in the shipped SKILL.md path."""
+    assert Config().skill_url.endswith("skills/arxiv-query-mcp/SKILL.md")
+
+
+def test_skill_url_env_override_and_disable(monkeypatch):
+    """ARXIV_MCP_SKILL_URL overrides the URL; an empty value disables it."""
+    monkeypatch.setenv("ARXIV_MCP_SKILL_URL", "https://example.test/SKILL.md")
+    assert Config.from_env().skill_url == "https://example.test/SKILL.md"
+    monkeypatch.setenv("ARXIV_MCP_SKILL_URL", "")
+    assert Config.from_env().skill_url == ""
