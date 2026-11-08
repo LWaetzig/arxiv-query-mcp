@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.0.0](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.3.1...v2.0.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Updating MCP cli version
+
+### Features
+
+* adding caching ([e6b951f](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/e6b951fefde63038fdaf842248bde4c3a4e06759))
+* **SKILL.md:** adding claude skill for the mcp use ([bf87b79](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/bf87b79c01984f4d23469a2b7ca8c4be5548b8f8))
+* Updating MCP cli version ([6c14cee](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/6c14cee56471369690726a474ccea783277855de))
+
+
+### Bug Fixes
+
+* update publish stage to use Test PyPI ([3248eee](https://gitlab.com/personal-public-packages/arxiv-query-mcp/commit/3248eee3f5d19970085f841274963edeeb950cdf))
+
 ## [1.3.1](https://gitlab.com/personal-public-packages/arxiv-query-mcp/compare/v1.3.0...v1.3.1) (2026-05-10)
 
 
