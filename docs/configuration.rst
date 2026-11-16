@@ -66,7 +66,7 @@ Connection and output
      - Default
      - Description
    * - ``ARXIV_MCP_SKILL_URL``
-     - GitHub raw URL of ``skills/arxiv-query-mcp/SKILL.md``
+     - GitHub raw URL of the bundled ``SKILL.md``
      - URL of the agent skill, advertised to clients in the server instructions
        (see :ref:`agent-skill`). Set to an empty string to disable the notice.
 
@@ -147,7 +147,8 @@ Rate limiting and retries
 Agent skill
 -----------
 
-The repository ships an agent skill, ``skills/arxiv-query-mcp/SKILL.md``, that
+The package ships an agent skill,
+``src/arxiv_query_mcp/skills/arxiv-query-mcp/SKILL.md``, that
 explains when and how to use the tools: query syntax, search strategy,
 pagination, and error handling. The server advertises its URL in the MCP server
 *instructions*, which clients show to the agent when it connects, for example:
@@ -159,8 +160,10 @@ pagination, and error handling. The server advertises its URL in the MCP server
    supports skills or can fetch URLs, read it before your first call.
 
 Point ``ARXIV_MCP_SKILL_URL`` at your own copy to customise the guidance, or set
-it to an empty string to remove the notice. To install the skill permanently,
-copy the file into your client's skills directory.
+it to an empty string to remove the notice. Run ``arxiv-query-mcp setup`` (or
+``arxiv-query-mcp install-skill``) to download it into
+``~/.claude/skills/arxiv-query-mcp/``; if the download fails the bundled copy is
+installed instead.
 
 Programmatic configuration
 --------------------------

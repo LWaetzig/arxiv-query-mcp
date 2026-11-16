@@ -8,6 +8,44 @@ Prerequisites
 - The MCP Python SDK **2.3** or later (installed automatically as ``mcp[cli]>=2.3.0``)
 - An MCP-compatible client (Claude Desktop, Cline, Continue, or any custom client)
 
+Recommended: uv and one-command setup
+-------------------------------------
+
+.. code-block:: bash
+
+   uv tool install arxiv-query-mcp
+   arxiv-query-mcp setup
+
+``setup`` registers the server with Claude Desktop, Claude Code, Cursor,
+Windsurf and Gemini CLI (those that are installed) and installs the agent
+skill. Other servers in those configs are preserved, and existing ``env``
+settings of the ``arxiv`` entry are kept. Restart your client afterwards.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Command
+     - Purpose
+   * - ``arxiv-query-mcp`` / ``arxiv-query-mcp serve``
+     - Run the MCP server over stdio
+   * - ``arxiv-query-mcp setup --no-skill``
+     - Register the server only (also ``--no-claude-desktop``, ``--no-claude-code``)
+   * - ``arxiv-query-mcp install-skill``
+     - Install only the skill into the agents detected in the current project
+   * - ``arxiv-query-mcp install-skill --target cursor``
+     - Install for one agent (``claude-user``, ``claude``, ``cursor``,
+       ``windsurf``, ``agents``, ``gemini``; repeatable)
+   * - ``arxiv-query-mcp install-skill --force``
+     - Overwrite a skill file that differs from the current one
+
+Without ``--force`` an existing, differing skill is never overwritten. Codex
+stores MCP servers in TOML, which ``setup`` does not edit; its skill is covered
+by the ``agents`` target (``AGENTS.md``).
+
+Try it without installing: ``uvx arxiv-query-mcp setup``. Note that
+this registers a temporary path, so use ``uv tool install`` for a lasting setup.
+
 Install from PyPI
 -----------------
 
@@ -45,7 +83,8 @@ MCP Client Setup
 Claude Desktop
 ~~~~~~~~~~~~~~
 
-Add the server entry to your Claude Desktop configuration file:
+``arxiv-query-mcp setup`` writes this entry for you. To add it by hand, edit
+your Claude Desktop configuration file:
 
 .. list-table::
    :header-rows: 1

@@ -9,7 +9,7 @@ from . import __version__
 
 DEFAULT_SKILL_URL = (
     "https://raw.githubusercontent.com/LWaetzig/arxiv-query-mcp/main/"
-    "skills/arxiv-query-mcp/SKILL.md"
+    "src/arxiv_query_mcp/skills/arxiv-query-mcp/SKILL.md"
 )
 
 def _default_user_agent() -> str:
