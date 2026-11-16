@@ -29,10 +29,41 @@ An MCP (Model Context Protocol) server that gives AI assistants direct access to
 
 > **Upgrading from 1.x:** the server now requires the MCP Python SDK 2.x (`FastMCP` was renamed to `MCPServer`). The tool names and parameters are unchanged; only environments that pin `mcp<2` need to upgrade.
 
+### Recommended: uv + one-command setup
+
+```bash
+uv tool install arxiv-query-mcp
+arxiv-query-mcp setup
+```
+
+`setup` registers the server with Claude Desktop (`claude_desktop_config.json`) and Claude Code (`claude mcp add --scope user`), plus Cursor (`~/.cursor/mcp.json`), Windsurf and Gemini CLI when installed, and downloads the agent skill into `~/.claude/skills/arxiv-query-mcp/`. Existing entries in your config are preserved, including the `env` block of an existing `arxiv` entry. Skip parts with `--no-claude-desktop`, `--no-claude-code` or `--no-skill`. Restart your client afterwards.
+
+Try it without installing: `uvx arxiv-query-mcp setup` (this registers a temporary path, so use `uv tool install` for a lasting setup).
+
+| Command | Purpose |
+|---|---|
+| `arxiv-query-mcp` / `arxiv-query-mcp serve` | Run the MCP server over stdio |
+| `arxiv-query-mcp setup` | Configure clients and install the skill |
+| `arxiv-query-mcp install-skill [--target T]... [--root D] [--force]` | Download the skill into every detected agent in the project (falls back to the bundled copy offline) |
+
+`install-skill` detects which agents the current project uses and writes to each; name targets explicitly with `--target`. It never overwrites a differing file without `--force`, and only edits the marked block in shared files.
+
+| Target | Detected by | Writes |
+|---|---|---|
+| `claude-user` | always | `~/.claude/skills/arxiv-query-mcp/SKILL.md` |
+| `claude` | `.claude/` | `.claude/skills/arxiv-query-mcp/SKILL.md` |
+| `cursor` | `.cursor/` | `.cursor/rules/arxiv-query-mcp.mdc` |
+| `windsurf` | `.windsurf/` | `.windsurf/rules/arxiv-query-mcp.md` |
+| `agents` (Codex, Amp, OpenCode, Jules, …) | `AGENTS.md` | pointer block in `AGENTS.md` + `.agents/skills/arxiv-query-mcp/SKILL.md` |
+| `gemini` | `GEMINI.md` or `.gemini/` | pointer block in `GEMINI.md` + `.agents/skills/arxiv-query-mcp/SKILL.md` |
+
+Codex stores MCP servers in TOML (`~/.codex/config.toml`), which `setup` does not edit; its skill is covered by the `agents` target.
+
 ### Install from PyPI
 
 ```bash
 pip install arxiv-query-mcp
+arxiv-query-mcp setup   # optional: configure clients and install the skill
 ```
 
 ### Build from Source
@@ -51,7 +82,7 @@ pip install -e .
 
 ### Integration with Claude Desktop
 
-Add the server to your Claude Desktop configuration:
+`arxiv-query-mcp setup` does this for you. To configure it by hand, add the server to your Claude Desktop configuration:
 
 | Platform | Path |
 |---|---|
@@ -114,12 +145,13 @@ The server works out of the box. Every setting can be overridden with an environ
 | `ARXIV_MCP_MAX_RETRIES` | `4` | Attempts per request before giving up |
 | `ARXIV_MCP_BACKOFF_BASE` | `1` | Initial retry back-off in seconds (doubles per attempt) |
 | `ARXIV_MCP_BACKOFF_MAX` | `30` | Upper bound for a single retry wait, including `Retry-After` |
+| `ARXIV_MCP_SKILL_URL` | GitHub raw URL of `SKILL.md` | URL advertised to agents in the server instructions and used by `install-skill`; set to an empty string to omit the notice (the bundled copy is then installed) |
 
 Invalid numeric values stop the server at startup with an error naming the variable.
 
 ### Agent skill
 
-The repository ships an agent skill, [`skills/arxiv-query-mcp/SKILL.md`](skills/arxiv-query-mcp/SKILL.md), that explains when and how to use the tools (query syntax, search strategy, pagination, error handling). The server advertises its URL in the MCP server instructions, which clients show to the agent when it connects, so agents that support skills or can fetch URLs can pick it up automatically. Copy the file into your client's skills directory (e.g. `~/.claude/skills/arxiv-query-mcp/`) to install it permanently.
+The package ships an agent skill, [`SKILL.md`](src/arxiv_query_mcp/skills/arxiv-query-mcp/SKILL.md), that explains when and how to use the tools (query syntax, search strategy, pagination, error handling). The server advertises its URL in the MCP server instructions, which clients show to the agent when it connects, so agents that support skills or can fetch URLs can pick it up automatically. `arxiv-query-mcp setup` (or `install-skill`) downloads it from `ARXIV_MCP_SKILL_URL` into `~/.claude/skills/arxiv-query-mcp/`, falling back to the bundled copy if the download fails.
 
 ### How caching and rate limiting work
 
