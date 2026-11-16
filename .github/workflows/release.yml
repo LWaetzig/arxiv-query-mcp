@@ -1,0 +1,86 @@
+name: Release
+
+# On main: test -> version + tag + GitHub release -> build -> PyPI -> docs.
+# Put "[skip release]" in a commit message to skip the release.
+# Requires a PyPI trusted publisher: workflow release.yml, environment pypi.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: "!contains(github.event.head_commit.message, '[skip release]') && !startsWith(github.event.head_commit.message, 'chore(release)')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: poetry run ruff check . && poetry run mypy .
+      - run: poetry run pytest tests
+
+  version:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push tag, create release
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      # main is protected (PR + signed commits only), so no release commit is
+      # pushed: the tag alone marks the release and the notes live in the
+      # GitHub release. CHANGELOG.md is only regenerated in the runner to
+      # extract those notes.
+      - name: Compute version, create tag
+        id: bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npx --yes commit-and-tag-version --no-verify --skip.commit \
+            --commitUrlFormat "https://github.com/${{ github.repository }}/commit/{{hash}}" \
+            --compareUrlFormat "https://github.com/${{ github.repository }}/compare/{{previousTag}}...{{currentTag}}"
+          TAG=$(git describe --tags --abbrev=0)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          awk '/^## \[/{if(p)exit; p=1; next} p' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          git push origin "refs/tags/$TAG"
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=${{ steps.bump.outputs.tag }}
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+
+  publish:
+    needs: version
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.version.outputs.tag }}" }
+      - uses: ./.github/actions/setup
+      - name: Set version from tag
+        run: |
+          V="${{ needs.version.outputs.tag }}"; V="${V#v}"
+          sed -i -e "0,/0.0.0/s//$V/" pyproject.toml
+      - run: poetry build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  docs:
+    needs: version
+    uses: ./.github/workflows/docs.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

@@ -47,7 +47,7 @@ pip install -e .
 
 ## Usage
 
-- Detailed documentation about single tools can be found [here](https://personal-public-packages.gitlab.io/arxiv-query-mcp)
+- Detailed documentation about single tools can be found [here](https://lwaetzig.github.io/arxiv-query-mcp)
 
 ### Integration with Claude Desktop
 

@@ -1,0 +1,19 @@
+name: Setup Python + Poetry
+description: Install Poetry and project dependencies
+inputs:
+  python-version:
+    default: "3.12"
+  groups:
+    description: Extra dependency groups (poetry --with)
+    default: ""
+runs:
+  using: composite
+  steps:
+    - run: pipx install poetry
+      shell: bash
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: poetry
+    - run: poetry install --no-root ${{ inputs.groups != '' && format('--with {0}', inputs.groups) || '' }}
+      shell: bash

@@ -45,7 +45,7 @@ docs = [
 Homepage = "https://github.com/LWaetzig/arxiv-query-mcp"
 Repository = "https://github.com/LWaetzig/arxiv-query-mcp"
 Issues = "https://github.com/LWaetzig/arxiv-query-mcp/issues"
-Documentation = "https://personal-public-packages.gitlab.io/arxiv-query-mcp"
+Documentation = "https://lwaetzig.github.io/arxiv-query-mcp"
 
 [project.scripts]
 arxiv-query-mcp = "arxiv_query_mcp.server:main"
