@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 
 import diskcache
 import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from .cache import TwoTierCache
 from .config import Config
@@ -13,18 +16,25 @@ from .models import (
     FetchPaperTextInput,
     GetPaperInput,
     ListByCategoryInput,
+    RelatedPapersInput,
+    Relation,
     ResponseFormat,
     SearchInput,
 )
 from .ratelimit import RateLimiter, resilient_get
+from .semantic_scholar import fetch_related, format_related, related_error_message
 from .utils import (
     _author_line,
     _clean_id,
+    _date_range_label,
     _fetch_arxiv,
     _format_paper_detail,
     _format_paper_list,
     _handle_error,
+    _pdf_to_text,
     _strip_html,
+    _versioned_id,
+    _with_date_filter,
 )
 
 # MARK: Config
@@ -33,6 +43,7 @@ config = Config.from_env()
 _client: httpx.AsyncClient | None = None
 _cache: TwoTierCache | None = None
 _limiter: RateLimiter | None = None
+_s2_limiter: RateLimiter | None = None
 _disk_cache: diskcache.Cache | None = None
 
 
@@ -45,10 +56,13 @@ async def _lifespan(app: MCPServer):
     every signature.  The diskcache is closed on shutdown so no SQLite
     connections are leaked.
     """
-    global _client, _cache, _limiter, _disk_cache
+    global _client, _cache, _limiter, _s2_limiter, _disk_cache
     _disk_cache = diskcache.Cache(config.resolved_cache_dir)
     _cache = TwoTierCache(config, _disk_cache)
     _limiter = RateLimiter(config, _disk_cache)
+    _s2_limiter = RateLimiter(
+        config, _disk_cache, namespace="s2", period=config.s2_rate_limit_period
+    )
     async with httpx.AsyncClient(
         follow_redirects=True,
         timeout=config.request_timeout,
@@ -62,6 +76,7 @@ async def _lifespan(app: MCPServer):
             _disk_cache = None
             _cache = None
             _limiter = None
+            _s2_limiter = None
 
 
 def _http() -> httpx.AsyncClient:
@@ -83,9 +98,11 @@ def _build_instructions(cfg: Config) -> str:
     """
     text = (
         "Read-only access to arXiv: search papers, get metadata by ID, browse "
-        "subject categories, and read paper text. Start with arxiv_search, "
-        "confirm candidates with arxiv_get_paper, and use "
-        "arxiv_fetch_paper_text only for papers that must be read in depth."
+        "subject categories, read paper text, and find similar, cited and "
+        "citing papers. Start with arxiv_search, confirm candidates with "
+        "arxiv_get_paper, use arxiv_related_papers to expand from a known "
+        "paper, and use arxiv_fetch_paper_text only for papers that must be "
+        "read in depth."
     )
     if cfg.skill_url:
         text += (
@@ -105,8 +122,30 @@ mcp = MCPServer(
 
 # MARK: Tools
 
+
+def _read_only(title: str) -> ToolAnnotations:
+    """Annotations shared by every tool: read-only queries against arXiv.
+
+    Args:
+        title: Human-readable tool title shown by clients.
+
+    Returns:
+        Annotations marking the tool as read-only, idempotent and talking to
+        an external service, so clients need not ask for confirmation.
+    """
+    return ToolAnnotations(
+        title=title,
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    )
+
+
 @mcp.tool(
     name="arxiv_search",
+    title="Search arXiv",
+    annotations=_read_only("Search arXiv"),
 )
 async def arxiv_search(params: SearchInput) -> str:
     """Search arXiv for academic papers using full query syntax.
@@ -121,6 +160,8 @@ async def arxiv_search(params: SearchInput) -> str:
             - start (int): Pagination offset (default 0)
             - sort_by (str): relevance | lastUpdatedDate | submittedDate
             - sort_order (str): descending | ascending
+            - date_from (str): Only papers submitted on/after YYYY-MM-DD
+            - date_to (str): Only papers submitted on/before YYYY-MM-DD
             - response_format (str): markdown | json
 
     Returns:
@@ -133,7 +174,7 @@ async def arxiv_search(params: SearchInput) -> str:
           "start": int,
           "has_more": bool,
           "next_start": int | null,
-          "papers": [{ "id", "title", "authors", "abstract", "published",
+          "papers": [{ "id", "version", "title", "authors", "abstract", "published",
                        "updated", "primary_category", "categories",
                        "abstract_url", "pdf_url", "html_url",
                        "comment", "journal_ref", "doi" }]
@@ -144,11 +185,15 @@ async def arxiv_search(params: SearchInput) -> str:
         - 'au:lecun AND cat:cs.CV' — LeCun's vision papers
         - 'abs:diffusion AND abs:image generation' — diffusion image gen
         - 'ti:attention is all you need' — search by title phrase
+        - query='abs:agents', date_from='2026-10-01' — recent papers only
     """
     try:
+        date_label = _date_range_label(params.date_from, params.date_to)
         total, papers = await _fetch_arxiv(
             {
-                "search_query": params.query,
+                "search_query": _with_date_filter(
+                    params.query, params.date_from, params.date_to
+                ),
                 "start": params.start,
                 "max_results": params.max_results,
                 "sortBy": params.sort_by.value,
@@ -161,7 +206,7 @@ async def arxiv_search(params: SearchInput) -> str:
         )
 
         if not papers:
-            return f"No papers found for query: '{params.query}'"
+            return f"No papers found for query: '{params.query}'{date_label}"
 
         if params.response_format == ResponseFormat.JSON:
             next_start = (
@@ -181,14 +226,20 @@ async def arxiv_search(params: SearchInput) -> str:
                 indent=2,
             )
 
-        return _format_paper_list(papers, total, params.start, params.query)
+        return _format_paper_list(
+            papers, total, params.start, f"{params.query}{date_label}"
+        )
 
+    except ToolError:
+        raise
     except Exception as exc:
-        return _handle_error(exc)
+        raise ToolError(_handle_error(exc)) from exc
 
 
 @mcp.tool(
     name="arxiv_get_paper",
+    title="Get arXiv paper metadata",
+    annotations=_read_only("Get arXiv paper metadata"),
 )
 async def arxiv_get_paper(params: GetPaperInput) -> str:
     """Retrieve full metadata for a specific arXiv paper by its ID.
@@ -199,15 +250,17 @@ async def arxiv_get_paper(params: GetPaperInput) -> str:
     Args:
         params (GetPaperInput):
             - paper_id (str): arXiv ID, e.g. '2303.08774', '1706.03762v2',
-                              or old-style 'hep-th/9901001'
+                              or old-style 'hep-th/9901001'. A version
+                              suffix selects that version; without one the
+                              latest version is returned.
             - response_format (str): markdown | json
 
     Returns:
         str: Full paper metadata.
 
         JSON schema when response_format='json':
-        { "id", "title", "authors", "abstract", "published", "updated",
-          "primary_category", "categories", "abstract_url", "pdf_url",
+        { "id", "version", "title", "authors", "abstract", "published",
+          "updated", "primary_category", "categories", "abstract_url", "pdf_url",
           "html_url", "comment", "journal_ref", "doi" }
 
     Examples:
@@ -216,7 +269,7 @@ async def arxiv_get_paper(params: GetPaperInput) -> str:
         - AlphaFold:                 paper_id='2108.10991'
     """
     try:
-        clean = _clean_id(params.paper_id)
+        clean = _versioned_id(params.paper_id)
         _, papers = await _fetch_arxiv(
             {"id_list": clean},
             config,
@@ -237,12 +290,16 @@ async def arxiv_get_paper(params: GetPaperInput) -> str:
 
         return _format_paper_detail(paper)
 
+    except ToolError:
+        raise
     except Exception as exc:
-        return _handle_error(exc)
+        raise ToolError(_handle_error(exc)) from exc
 
 
 @mcp.tool(
     name="arxiv_list_by_category",
+    title="List arXiv papers by category",
+    annotations=_read_only("List arXiv papers by category"),
 )
 async def arxiv_list_by_category(params: ListByCategoryInput) -> str:
     """List recent papers in a specific arXiv subject category.
@@ -257,6 +314,8 @@ async def arxiv_list_by_category(params: ListByCategoryInput) -> str:
             - start (int): Pagination offset
             - sort_by (str): relevance | lastUpdatedDate | submittedDate
             - sort_order (str): descending | ascending
+            - date_from (str): Only papers submitted on/after YYYY-MM-DD
+            - date_to (str): Only papers submitted on/before YYYY-MM-DD
             - response_format (str): markdown | json
 
     Returns:
@@ -272,9 +331,12 @@ async def arxiv_list_by_category(params: ListByCategoryInput) -> str:
         q-bio.NC — Neurons & Cognition
     """
     try:
+        date_label = _date_range_label(params.date_from, params.date_to)
         total, papers = await _fetch_arxiv(
             {
-                "search_query": f"cat:{params.category}",
+                "search_query": _with_date_filter(
+                    f"cat:{params.category}", params.date_from, params.date_to
+                ),
                 "start": params.start,
                 "max_results": params.max_results,
                 "sortBy": params.sort_by.value,
@@ -288,7 +350,7 @@ async def arxiv_list_by_category(params: ListByCategoryInput) -> str:
 
         if not papers:
             return (
-                f"No papers found in category '{params.category}'. "
+                f"No papers found in category '{params.category}'{date_label}. "
                 "Check that the category code is valid (e.g. 'cs.LG', 'math.CO')."
             )
 
@@ -312,36 +374,51 @@ async def arxiv_list_by_category(params: ListByCategoryInput) -> str:
             )
 
         return _format_paper_list(
-            papers, total, params.start, f"Category: {params.category}"
+            papers, total, params.start, f"Category: {params.category}{date_label}"
         )
 
+    except ToolError:
+        raise
     except Exception as exc:
-        return _handle_error(exc)
+        raise ToolError(_handle_error(exc)) from exc
 
 
 @mcp.tool(
     name="arxiv_fetch_paper_text",
+    title="Read arXiv paper text",
+    annotations=_read_only("Read arXiv paper text"),
 )
 async def arxiv_fetch_paper_text(params: FetchPaperTextInput) -> str:
     """Fetch the readable text content of an arXiv paper.
 
     First tries the HTML version of the paper (available for most papers
-    submitted after ~2023 with LaTeX source). Falls back to returning the
-    full abstract and metadata if the HTML version is unavailable.
+    submitted after ~2023 with LaTeX source). Without one, the text is
+    extracted from the PDF instead. Only if neither works does it return the
+    full abstract and metadata.
 
     Use arxiv_get_paper first to find the paper ID, then call this tool
     to read the paper's content.
 
     Args:
         params (FetchPaperTextInput):
-            - paper_id (str): arXiv paper ID, e.g. '2303.08774'
+            - paper_id (str): arXiv paper ID, e.g. '2303.08774'; add a
+                              version suffix ('2303.08774v1') to read
+                              that version instead of the latest
+            - offset (int): Character offset to start from (default 0)
+            - response_format (str): markdown | json
 
     Returns:
-        str: Extracted paper text (up to 10,000 characters) or full abstract
-             with links when HTML is unavailable.
+        str: One page of extracted paper text (about 10,000 characters) or
+             the full abstract with links when no text can be extracted. Long
+             papers span several pages: when more text remains, the response
+             reports the next offset; call again with that offset to continue.
+
+        JSON schema when response_format='json' (text available):
+        { "id", "source", "format" ("html" | "pdf"), "total_chars", "offset", "count", "has_more",
+          "next_offset", "text" }
     """
     try:
-        clean = _clean_id(params.paper_id)
+        clean = _versioned_id(params.paper_id)
         html_url = f"{config.arxiv_html_base}/{clean}"
         client = _http()
 
@@ -374,27 +451,106 @@ async def arxiv_fetch_paper_text(params: FetchPaperTextInput) -> str:
                 return ""
 
         if _cache is not None:
-            html_text: str = await _cache.get_or_fetch(
-                ("html", html_url), _fetch_html
-            )
+            text: str = await _cache.get_or_fetch(("text-v2", html_url), _fetch_html)
         else:
-            html_text = await _fetch_html()
+            text = await _fetch_html()
+        source_url, source_format = html_url, "html"
 
-        if html_text:
-            truncated = html_text[: config.max_fetch_chars]
-            suffix = (
-                f"\n\n… [truncated at {config.max_fetch_chars} chars — full HTML: {html_url}]"
-                if len(html_text) > config.max_fetch_chars
+        # No HTML version (typical for papers before ~2023): extract the PDF.
+        async def _fetch_pdf() -> str:
+            """Return text extracted from the PDF, or '' when unavailable."""
+            try:
+                if _limiter is not None:
+                    resp = await resilient_get(
+                        client, pdf_url, cfg=config, limiter=_limiter
+                    )
+                else:
+                    resp = await client.get(pdf_url)
+            except httpx.HTTPError:
+                # Includes timeouts: a slow PDF falls back to the abstract.
+                return ""
+            if resp.status_code != 200 or "application/pdf" not in resp.headers.get(
+                "content-type", ""
+            ):
+                return ""
+            if len(resp.content) > config.max_pdf_bytes:
+                return ""
+            pdf_text = await asyncio.to_thread(_pdf_to_text, resp.content)
+            return pdf_text if len(pdf_text) > 500 else ""
+
+        if not text and config.max_pdf_bytes > 0:
+            pdf_url = f"{config.arxiv_pdf_base}/{clean}"
+            if _cache is not None:
+                text = await _cache.get_or_fetch(("pdf-text-v1", pdf_url), _fetch_pdf)
+            else:
+                text = await _fetch_pdf()
+            source_url, source_format = pdf_url, "pdf"
+
+        if text:
+            total = len(text)
+            offset = params.offset
+            if offset >= total:
+                raise ToolError(
+                    f"offset {offset} is past the end of the paper text "
+                    f"({total} characters). Use an offset below {total}."
+                )
+
+            end = min(offset + config.max_fetch_chars, total)
+            if end < total:
+                # Prefer to end the page on a paragraph break, else between words.
+                floor = offset + config.max_fetch_chars // 2
+                # The separator stays on this page so the next one starts clean.
+                cut = text.rfind("\n\n", floor, end - 1)
+                if cut != -1:
+                    end = cut + 2
+                else:
+                    cut = max(text.rfind(" ", floor, end), text.rfind("\n", floor, end))
+                    if cut != -1:
+                        end = cut + 1
+            chunk = text[offset:end]
+            next_offset = end if end < total else None
+
+            if params.response_format == ResponseFormat.JSON:
+                return json.dumps(
+                    {
+                        "id": clean,
+                        "source": source_url,
+                        "format": source_format,
+                        "total_chars": total,
+                        "offset": offset,
+                        "count": len(chunk),
+                        "has_more": next_offset is not None,
+                        "next_offset": next_offset,
+                        "text": chunk,
+                    },
+                    indent=2,
+                )
+
+            note = (
+                " (text extracted from the PDF; layout, tables and formulas "
+                "may be imperfect)"
+                if source_format == "pdf"
                 else ""
             )
-            return f"# Paper Text: {clean}\nSource: {html_url}\n\n{truncated}{suffix}"
+            suffix = (
+                f"\n\n… [more text available — call again with "
+                f"offset={next_offset} to continue; full paper: {source_url}]"
+                if next_offset is not None
+                else ""
+            )
+            return (
+                f"# Paper Text: {clean}\nSource: {source_url}{note}\n"
+                f"Characters {offset}–{end} of {total}\n\n{chunk}{suffix}"
+            )
 
         # Fallback: return full abstract from API using same client
         _, papers = await _fetch_arxiv(
             {"id_list": clean}, config, client, cache=_cache, limiter=_limiter
         )
         if not papers:
-            return f"Error: Paper '{clean}' not found. Verify the ID with arxiv_search."
+            raise ToolError(
+                f"Paper '{clean}' not found. Verify the ID with arxiv_search."
+            )
 
         p = papers[0]
         return (
@@ -406,12 +562,98 @@ async def arxiv_fetch_paper_text(params: FetchPaperTextInput) -> str:
             f"**HTML (may not be available):** {p['html_url']}\n\n"
             f"## Abstract\n\n{p['abstract']}\n\n"
             f"---\n"
-            f"*HTML version unavailable for this paper. "
-            f"Read the full text at: {p['pdf_url']}*"
+            f"*The full text could not be extracted for this paper. "
+            f"Read it at: {p['pdf_url']}*"
         )
 
+    except ToolError:
+        raise
     except Exception as exc:
-        return _handle_error(exc)
+        raise ToolError(_handle_error(exc)) from exc
+
+
+@mcp.tool(
+    name="arxiv_related_papers",
+    title="Find related papers",
+    annotations=_read_only("Find related papers"),
+)
+async def arxiv_related_papers(params: RelatedPapersInput) -> str:
+    """Find papers related to a known arXiv paper: similar, cited, or citing.
+
+    arXiv has no citation or similarity data, so this tool uses Semantic
+    Scholar. Results can include papers that are not on arXiv (they have no
+    arXiv ID and link to Semantic Scholar instead). Very new preprints may not
+    be indexed yet.
+
+    Args:
+        params (RelatedPapersInput):
+            - paper_id (str): arXiv ID or URL, e.g. '1706.03762'
+            - relation (str): similar | references | cited_by
+            - max_results (int): Results per page (1 - 50, default 10)
+            - start (int): Pagination offset (references and cited_by only)
+            - response_format (str): markdown | json
+
+    Returns:
+        str: List of related papers with authors, year, citation count, link
+        and abstract snippet.
+
+        JSON schema when response_format='json':
+        {
+          "paper_id": str, "relation": str, "source": "semantic_scholar",
+          "start": int, "count": int, "has_more": bool,
+          "next_start": int | null,
+          "papers": [{ "title", "authors", "year", "published", "arxiv_id",
+                       "doi", "venue", "citation_count", "url", "abstract" }]
+        }
+
+    Examples:
+        - Papers like Attention Is All You Need: paper_id='1706.03762'
+        - What GPT-4's report builds on: paper_id='2303.08774',
+          relation='references'
+        - Follow-up work on Adam: paper_id='1412.6980', relation='cited_by'
+    """
+    clean = _clean_id(params.paper_id)
+    try:
+        next_start, papers = await fetch_related(
+            clean,
+            params.relation,
+            params.max_results,
+            params.start,
+            config,
+            _http(),
+            cache=_cache,
+            limiter=_s2_limiter,
+        )
+    except Exception as exc:
+        raise ToolError(
+            related_error_message(exc, clean) or _handle_error(exc)
+        ) from exc
+
+    if params.response_format == ResponseFormat.JSON:
+        return json.dumps(
+            {
+                "paper_id": clean,
+                "relation": params.relation.value,
+                "source": "semantic_scholar",
+                "start": params.start,
+                "count": len(papers),
+                "has_more": next_start is not None,
+                "next_start": next_start,
+                "papers": papers,
+            },
+            indent=2,
+        )
+
+    if not papers:
+        return {
+            Relation.SIMILAR: f"Semantic Scholar has no recommendations for {clean}.",
+            Relation.REFERENCES: f"Semantic Scholar lists no references for {clean}"
+            + (" beyond this offset." if params.start else "."),
+            Relation.CITED_BY: f"Semantic Scholar lists no citing papers for {clean}"
+            + (" beyond this offset." if params.start else "."),
+        }[params.relation]
+
+    return format_related(papers, clean, params.relation, params.start, next_start)
 
 
 # MARK: Entry Point

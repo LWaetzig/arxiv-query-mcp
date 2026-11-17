@@ -372,3 +372,47 @@ async def test_acquire_releases_semaphore_when_spacing_fails(rl_cfg, dc, monkeyp
     for _ in range(rl_cfg.max_concurrency + 2):
         with pytest.raises(RuntimeError):
             await lim.acquire()
+
+
+# ---- namespaces ------------------------------------------------------------
+
+
+async def test_namespaces_are_spaced_independently(tmp_path):
+    """A Semantic Scholar request does not delay the next arXiv request."""
+    cfg = Config(
+        cache_dir=str(tmp_path / "ns"),
+        rate_limit_enabled=True,
+        rate_limit_period=0.5,
+        max_concurrency=4,
+    )
+    d = diskcache.Cache(cfg.cache_dir)
+    try:
+        arxiv = RateLimiter(cfg, d)
+        s2 = RateLimiter(cfg, d, namespace="s2", period=0.5)
+
+        await arxiv.acquire()
+        arxiv.release()
+
+        t0 = time.monotonic()
+        await s2.acquire()
+        s2.release()
+        assert time.monotonic() - t0 < 0.3
+
+        t0 = time.monotonic()
+        await arxiv.acquire()
+        arxiv.release()
+        assert time.monotonic() - t0 >= 0.1
+    finally:
+        d.close()
+
+
+async def test_resilient_get_forwards_headers(rl_cfg, limiter):
+    ok = httpx.Response(200, request=httpx.Request("GET", "https://x.test"))
+    client = MagicMock()
+    client.get = AsyncMock(return_value=ok)
+
+    await resilient_get(
+        client, "https://x.test", headers={"x-api-key": "k"}, cfg=rl_cfg, limiter=limiter
+    )
+
+    assert client.get.call_args.kwargs["headers"] == {"x-api-key": "k"}

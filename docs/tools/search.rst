@@ -42,6 +42,14 @@ Parameters
      - ``str``
      - ``descending``
      - Sort direction: ``descending`` · ``ascending``
+   * - ``date_from``
+     - ``str``
+     - *(none)*
+     - Only papers submitted on or after this date (``YYYY-MM-DD``, UTC).
+   * - ``date_to``
+     - ``str``
+     - *(none)*
+     - Only papers submitted on or before this date (``YYYY-MM-DD``, UTC).
    * - ``response_format``
      - ``str``
      - ``markdown``

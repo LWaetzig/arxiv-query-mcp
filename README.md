@@ -14,7 +14,9 @@ An MCP (Model Context Protocol) server that gives AI assistants direct access to
 - **Search arXiv** — Full query syntax support with title, author, abstract, and category filters
 - **Get paper metadata** — Retrieve complete details for any paper by ID (abstract, authors, categories, DOI, links)
 - **Browse by category** — List recent papers in specific subject areas (ML, AI, NLP, Computer Vision, etc.)
-- **Read paper text** — Fetch HTML-rendered paper content or fallback to abstracts with links
+- **Read paper text** — Read a whole paper page by page, from its HTML version or, for older papers, from the PDF; headings, paragraphs and LaTeX math are kept
+- **Date filters** — Restrict searches and category listings to a submission-date range
+- **Related papers** — Find similar papers, a paper's references, or the papers citing it (via Semantic Scholar)
 - **Flexible formatting** — Response support for both markdown (human-readable) and JSON (programmatic)
 - **Pagination** — Handle large result sets with configurable limits and offsets
 - **Caching** — Two-tier cache (in-memory plus on-disk) so repeated queries and paper texts are served without hitting arXiv
@@ -25,7 +27,9 @@ An MCP (Model Context Protocol) server that gives AI assistants direct access to
 ### Prerequisites
 
 - `Python 3.12` or later
-- Dependencies `mcp[cli]>=2.3.0`, `httpx>=0.27.0`, `pydantic>=2.0.0`, `tenacity>=9.0`, `diskcache>=5.6`, `platformdirs>=4.0` (see [pyproject.toml](pyproject.toml)) (project uses `poetry` for dependency management)
+- Dependencies `mcp[cli]>=2.3.0`, `httpx>=0.27.0`, `pydantic>=2.0.0`, `tenacity>=9.0`, `diskcache>=5.6`, `platformdirs>=4.0`, `pypdf>=5.0` (see [pyproject.toml](pyproject.toml)) (project uses `poetry` for dependency management)
+
+> **Upgrading to 4.0:** failures (bad query, unknown paper, rate limit, …) are now returned as MCP tool errors (`isError`) instead of normal text starting with `Error:`, and a version suffix such as `1706.03762v2` now selects that version instead of being ignored. Tool names and existing parameters are unchanged.
 
 > **Upgrading from 1.x:** the server now requires the MCP Python SDK 2.x (`FastMCP` was renamed to `MCPServer`). The tool names and parameters are unchanged; only environments that pin `mcp<2` need to upgrade.
 
@@ -131,7 +135,8 @@ The server works out of the box. Every setting can be overridden with an environ
 |---|---|---|
 | `ARXIV_API_URL` | `https://export.arxiv.org/api/query` | arXiv Atom API endpoint |
 | `ARXIV_MCP_REQUEST_TIMEOUT` | `30` | Seconds before an HTTP request times out |
-| `ARXIV_MCP_MAX_FETCH_CHARS` | `10000` | Maximum characters returned by `arxiv_fetch_paper_text` |
+| `ARXIV_MCP_MAX_FETCH_CHARS` | `10000` | Maximum characters per page returned by `arxiv_fetch_paper_text` (continue with `offset`) |
+| `ARXIV_MCP_MAX_PDF_BYTES` | `30000000` | Largest PDF parsed when a paper has no HTML version; `0` disables the PDF fallback |
 | `ARXIV_MCP_USER_AGENT` | `arxiv-query-mcp/<version> (…)` | `User-Agent` header sent to arXiv |
 | `ARXIV_MCP_CACHE_ENABLED` | `true` | Set to `false`, `0`, `no` or `off` to disable caching |
 | `ARXIV_MCP_CACHE_DIR` | platform cache dir | Directory of the on-disk cache (shared between server processes) |
@@ -146,12 +151,19 @@ The server works out of the box. Every setting can be overridden with an environ
 | `ARXIV_MCP_BACKOFF_BASE` | `1` | Initial retry back-off in seconds (doubles per attempt) |
 | `ARXIV_MCP_BACKOFF_MAX` | `30` | Upper bound for a single retry wait, including `Retry-After` |
 | `ARXIV_MCP_SKILL_URL` | GitHub raw URL of `SKILL.md` | URL advertised to agents in the server instructions and used by `install-skill`; set to an empty string to omit the notice (the bundled copy is then installed) |
+| `ARXIV_MCP_S2_API_KEY` | *(empty)* | Semantic Scholar API key for `arxiv_related_papers`; optional, but avoids the shared public quota |
+| `ARXIV_MCP_S2_RATE_LIMIT_PERIOD` | `1` | Minimum seconds between Semantic Scholar requests, across all server processes |
+| `ARXIV_MCP_S2_API_URL` | `https://api.semanticscholar.org` | Semantic Scholar API base URL |
 
 Invalid numeric values stop the server at startup with an error naming the variable.
 
 ### Agent skill
 
 The package ships an agent skill, [`SKILL.md`](src/arxiv_query_mcp/skills/arxiv-query-mcp/SKILL.md), that explains when and how to use the tools (query syntax, search strategy, pagination, error handling). The server advertises its URL in the MCP server instructions, which clients show to the agent when it connects, so agents that support skills or can fetch URLs can pick it up automatically. `arxiv-query-mcp setup` (or `install-skill`) downloads it from `ARXIV_MCP_SKILL_URL` into `~/.claude/skills/arxiv-query-mcp/`, falling back to the bundled copy if the download fails.
+
+### Related papers and Semantic Scholar
+
+`arxiv_related_papers` gets its data from the [Semantic Scholar API](https://www.semanticscholar.org/product/api), since arXiv has no citation or similarity data. It works without an account, but unauthenticated requests share a public quota and are throttled more often; request a free API key and set `ARXIV_MCP_S2_API_KEY` to get your own.
 
 ### How caching and rate limiting work
 

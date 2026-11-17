@@ -61,12 +61,27 @@ class RateLimiter:
         cfg: Server configuration providing rate-limit and concurrency settings.
         dc: Open :class:`diskcache.Cache` used to store the shared timestamp and
             the distributed lock.  The caller is responsible for closing it.
+        namespace: Separates the spacing of different upstream services that
+            share one disk cache.  The default (empty) namespace is arXiv.
+        period: Minimum seconds between requests in this namespace.  Defaults
+            to :attr:`~Config.rate_limit_period`.
     """
 
-    def __init__(self, cfg: Config, dc: diskcache.Cache) -> None:
+    def __init__(
+        self,
+        cfg: Config,
+        dc: diskcache.Cache,
+        *,
+        namespace: str = "",
+        period: float | None = None,
+    ) -> None:
         self._cfg = cfg
         self._dc = dc
         self._semaphore = asyncio.Semaphore(cfg.max_concurrency)
+        self._period = cfg.rate_limit_period if period is None else period
+        suffix = f":{namespace}" if namespace else ""
+        self._ts_key = _RATE_TS_KEY + suffix
+        self._lock_key = _RATE_LOCK_KEY + suffix
 
     async def acquire(self) -> None:
         """Acquire the in-process slot and enforce the cross-process rate limit.
@@ -77,7 +92,7 @@ class RateLimiter:
         """
         await self._semaphore.acquire()
         try:
-            if self._cfg.rate_limit_enabled and self._cfg.rate_limit_period > 0:
+            if self._cfg.rate_limit_enabled and self._period > 0:
                 await asyncio.to_thread(self._sync_rate_limit)
         except BaseException:
             # Don't leak the slot if the spacing wait fails or is cancelled.
@@ -95,14 +110,14 @@ class RateLimiter:
         sleeps if needed, then updates the timestamp before releasing the lock.
         Running this in a thread ensures the asyncio event loop is never stalled.
         """
-        period = self._cfg.rate_limit_period
-        with diskcache.Lock(self._dc, _RATE_LOCK_KEY, expire=period + 10):
+        period = self._period
+        with diskcache.Lock(self._dc, self._lock_key, expire=period + 10):
             now = time.time()
-            last: float = self._dc.get(_RATE_TS_KEY, default=0.0)  # type: ignore[assignment]
+            last: float = self._dc.get(self._ts_key, default=0.0)  # type: ignore[assignment]
             delay = period - (now - last)
             if delay > 0:
                 time.sleep(delay)
-            self._dc.set(_RATE_TS_KEY, time.time())
+            self._dc.set(self._ts_key, time.time())
 
 
 def _retry_after_seconds(exc: BaseException | None) -> float | None:
@@ -134,6 +149,7 @@ async def resilient_get(
     url: str,
     *,
     params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
     cfg: Config,
     limiter: RateLimiter,
 ) -> httpx.Response:
@@ -156,6 +172,7 @@ async def resilient_get(
         client: Shared async HTTP client (managed by the server lifespan).
         url: Target URL.
         params: Optional query-string parameters forwarded to ``client.get``.
+        headers: Optional extra request headers (e.g. an API key).
         cfg: Server configuration providing ``max_retries``, ``backoff_base``,
             and ``backoff_max``.
         limiter: :class:`RateLimiter` whose :meth:`~RateLimiter.acquire` is
@@ -195,7 +212,10 @@ async def resilient_get(
         with attempt:
             await limiter.acquire()
             try:
-                resp = await client.get(url, params=params)
+                if headers:
+                    resp = await client.get(url, params=params, headers=headers)
+                else:
+                    resp = await client.get(url, params=params)
                 resp.raise_for_status()
             finally:
                 limiter.release()

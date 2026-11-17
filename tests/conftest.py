@@ -44,6 +44,9 @@ def _init_http_client(monkeypatch, tmp_path):
 
     monkeypatch.setattr(_server_module, "_cache", cache)
     monkeypatch.setattr(_server_module, "_limiter", limiter)
+    monkeypatch.setattr(
+        _server_module, "_s2_limiter", RateLimiter(test_cfg, dc, namespace="s2")
+    )
     monkeypatch.setattr(_server_module, "_disk_cache", dc)
 
     yield mock

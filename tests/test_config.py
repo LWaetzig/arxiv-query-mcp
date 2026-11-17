@@ -115,3 +115,15 @@ def test_skill_url_env_override_and_disable(monkeypatch):
     assert Config.from_env().skill_url == "https://example.test/SKILL.md"
     monkeypatch.setenv("ARXIV_MCP_SKILL_URL", "")
     assert Config.from_env().skill_url == ""
+
+
+def test_from_env_semantic_scholar_settings(monkeypatch):
+    monkeypatch.setenv("ARXIV_MCP_S2_API_KEY", "secret")
+    monkeypatch.setenv("ARXIV_MCP_S2_API_URL", "https://s2.test")
+    monkeypatch.setenv("ARXIV_MCP_S2_RATE_LIMIT_PERIOD", "2.5")
+
+    cfg = Config.from_env()
+
+    assert cfg.s2_api_key == "secret"
+    assert cfg.s2_api_url == "https://s2.test"
+    assert cfg.s2_rate_limit_period == 2.5

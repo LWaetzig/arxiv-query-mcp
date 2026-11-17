@@ -112,8 +112,10 @@ Read a Paper's Text
      "paper_id": "2303.08774"
    }
 
-The tool fetches the HTML-rendered version of the paper (when available) and
-returns up to 10,000 characters of extracted text.
+The tool fetches the HTML-rendered version of the paper (or, when there is
+none, extracts the text from the PDF) and
+returns up to 10,000 characters of extracted text per call; pass the reported
+``offset`` to read the next page.
 
 ----
 
