@@ -12,4 +12,5 @@ Auto-generated reference documentation for all public modules.
    config
    cache
    ratelimit
+   semantic_scholar
    utils

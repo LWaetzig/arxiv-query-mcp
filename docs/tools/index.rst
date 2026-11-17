@@ -1,8 +1,9 @@
 Tool Reference
 ==============
 
-The server exposes four read-only MCP tools. All tools are idempotent and safe
-— they only issue ``GET`` requests to the arXiv API.
+The server exposes five read-only MCP tools. All tools are idempotent and safe
+— they only issue ``GET`` requests to the arXiv API (and, for
+:ref:`arxiv_related_papers`, to Semantic Scholar).
 
 .. list-table::
    :header-rows: 1
@@ -17,7 +18,9 @@ The server exposes four read-only MCP tools. All tools are idempotent and safe
    * - :ref:`arxiv_list_by_category`
      - Browse the most recent papers in a given subject category
    * - :ref:`arxiv_fetch_paper_text`
-     - Extract human-readable text from a paper's HTML page
+     - Read a paper's full text page by page, from its HTML version or PDF
+   * - :ref:`arxiv_related_papers`
+     - Find similar papers, a paper's references, or the papers citing it
 
 .. toctree::
    :hidden:
@@ -26,6 +29,7 @@ The server exposes four read-only MCP tools. All tools are idempotent and safe
    get-paper
    list-by-category
    fetch-text
+   related-papers
 
 ----
 

@@ -28,7 +28,9 @@ Responses are cached and requests to arXiv are rate limited and retried automati
 +---------------------------------+-------------------------------------------------------------+
 | :ref:`arxiv_list_by_category`   | Browse recent preprints in a subject category               |
 +---------------------------------+-------------------------------------------------------------+
-| :ref:`arxiv_fetch_paper_text`   | Extract readable text from a paper's HTML page              |
+| :ref:`arxiv_fetch_paper_text`   | Read a paper's full text, page by page (HTML or PDF)        |
++---------------------------------+-------------------------------------------------------------+
+| :ref:`arxiv_related_papers`     | Find similar, referenced and citing papers                  |
 +---------------------------------+-------------------------------------------------------------+
 
 .. toctree::

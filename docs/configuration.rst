@@ -53,7 +53,11 @@ Connection and output
      - Seconds before an HTTP request times out
    * - ``ARXIV_MCP_MAX_FETCH_CHARS``
      - ``10000``
-     - Character limit for :ref:`arxiv_fetch_paper_text`
+     - Characters per page returned by :ref:`arxiv_fetch_paper_text`
+   * - ``ARXIV_MCP_MAX_PDF_BYTES``
+     - ``30000000``
+     - Largest PDF parsed when a paper has no HTML version; ``0`` disables
+       the PDF fallback
    * - ``ARXIV_MCP_USER_AGENT``
      - ``arxiv-query-mcp/<version> (…)``
      - ``User-Agent`` header sent with every request
@@ -69,6 +73,17 @@ Connection and output
      - GitHub raw URL of the bundled ``SKILL.md``
      - URL of the agent skill, advertised to clients in the server instructions
        (see :ref:`agent-skill`). Set to an empty string to disable the notice.
+   * - ``ARXIV_MCP_S2_API_KEY``
+     - *(empty)*
+     - Semantic Scholar API key for :ref:`arxiv_related_papers`. Without one,
+       requests share the public quota and are throttled more often.
+   * - ``ARXIV_MCP_S2_RATE_LIMIT_PERIOD``
+     - ``1``
+     - Minimum seconds between Semantic Scholar requests, across all server
+       processes
+   * - ``ARXIV_MCP_S2_API_URL``
+     - ``https://api.semanticscholar.org``
+     - Semantic Scholar API base URL
 
 The URL prefixes ``arxiv_abs_base``, ``arxiv_html_base`` and ``arxiv_pdf_base``
 (``https://arxiv.org/abs``, ``/html`` and ``/pdf``) are fixed defaults and have

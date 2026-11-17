@@ -35,7 +35,11 @@ class Config:
         arxiv_html_base: Base URL for arXiv HTML paper pages.
         arxiv_pdf_base: Base URL for arXiv PDF download pages.
         request_timeout: Seconds before an outgoing HTTP request times out.
-        max_fetch_chars: Maximum characters returned by arxiv_fetch_paper_text.
+        max_fetch_chars: Maximum characters per page returned by
+            arxiv_fetch_paper_text; callers read further pages via ``offset``.
+        max_pdf_bytes: Largest PDF (in bytes) that arxiv_fetch_paper_text will
+            parse when a paper has no HTML version.  ``0`` disables the PDF
+            fallback.
         cache_dir: Directory for the persistent L2 disk cache.  Empty string
             means "use the platform default via platformdirs or a temp dir".
         l1_ttl: Time-to-live (seconds) for in-memory L1 cache entries.
@@ -56,6 +60,13 @@ class Config:
         skill_url: URL of the agent ``SKILL.md`` that explains how and when to
             use this server.  It is advertised to clients in the server
             instructions.  An empty string disables the notice.
+        s2_api_url: Base URL of the Semantic Scholar API, used by
+            arxiv_related_papers.
+        s2_api_key: Optional Semantic Scholar API key sent as ``x-api-key``.
+            Without one, requests share Semantic Scholar's public pool and
+            are throttled more often.
+        s2_rate_limit_period: Minimum seconds between Semantic Scholar
+            requests (cross-process).
     """
 
     # ---- existing fields ----
@@ -65,6 +76,7 @@ class Config:
     arxiv_pdf_base: str = "https://arxiv.org/pdf"
     request_timeout: float = 30.0
     max_fetch_chars: int = 10_000
+    max_pdf_bytes: int = 30_000_000
 
     # ---- resilience / caching fields ----
     cache_dir: str = ""
@@ -81,6 +93,11 @@ class Config:
     cache_enabled: bool = True
     rate_limit_enabled: bool = True
     skill_url: str = DEFAULT_SKILL_URL
+
+    # ---- Semantic Scholar (related papers) ----
+    s2_api_url: str = "https://api.semanticscholar.org"
+    s2_api_key: str = ""
+    s2_rate_limit_period: float = 1.0
 
     @property
     def resolved_cache_dir(self) -> str:
@@ -116,7 +133,9 @@ class Config:
             ``ARXIV_MCP_BACKOFF_BASE``, ``ARXIV_MCP_BACKOFF_MAX``,
             ``ARXIV_MCP_USER_AGENT``, ``ARXIV_MCP_CACHE_ENABLED``,
             ``ARXIV_MCP_RATE_LIMIT_ENABLED``, ``ARXIV_MCP_REQUEST_TIMEOUT``,
-            ``ARXIV_MCP_MAX_FETCH_CHARS``, ``ARXIV_MCP_SKILL_URL``.
+            ``ARXIV_MCP_MAX_FETCH_CHARS``, ``ARXIV_MCP_MAX_PDF_BYTES``,
+            ``ARXIV_MCP_SKILL_URL``, ``ARXIV_MCP_S2_API_URL``,
+            ``ARXIV_MCP_S2_API_KEY``, ``ARXIV_MCP_S2_RATE_LIMIT_PERIOD``.
 
         Returns:
             A fully populated, immutable :class:`Config` instance.
@@ -165,6 +184,7 @@ class Config:
             arxiv_pdf_base=defaults.arxiv_pdf_base,
             request_timeout=_float("ARXIV_MCP_REQUEST_TIMEOUT", defaults.request_timeout),
             max_fetch_chars=_int("ARXIV_MCP_MAX_FETCH_CHARS", defaults.max_fetch_chars),
+            max_pdf_bytes=_int("ARXIV_MCP_MAX_PDF_BYTES", defaults.max_pdf_bytes),
             cache_dir=_str("ARXIV_MCP_CACHE_DIR", defaults.cache_dir),
             l1_ttl=_float("ARXIV_MCP_L1_TTL", defaults.l1_ttl),
             l2_ttl=_float("ARXIV_MCP_L2_TTL", defaults.l2_ttl),
@@ -183,4 +203,9 @@ class Config:
                 "ARXIV_MCP_RATE_LIMIT_ENABLED", defaults.rate_limit_enabled
             ),
             skill_url=_str("ARXIV_MCP_SKILL_URL", defaults.skill_url),
+            s2_api_url=_str("ARXIV_MCP_S2_API_URL", defaults.s2_api_url),
+            s2_api_key=_str("ARXIV_MCP_S2_API_KEY", defaults.s2_api_key),
+            s2_rate_limit_period=_float(
+                "ARXIV_MCP_S2_RATE_LIMIT_PERIOD", defaults.s2_rate_limit_period
+            ),
         )

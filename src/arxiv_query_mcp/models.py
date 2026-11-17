@@ -1,5 +1,8 @@
+from datetime import date
 from enum import Enum
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # MARK: Enums
@@ -19,6 +22,14 @@ class SortOrder(str, Enum):
     ASCENDING = "ascending"
 
 
+class Relation(str, Enum):
+    """How the returned papers relate to the given paper."""
+
+    SIMILAR = "similar"
+    REFERENCES = "references"
+    CITED_BY = "cited_by"
+
+
 class ResponseFormat(str, Enum):
     """Output serialisation format returned by each tool."""
 
@@ -28,7 +39,30 @@ class ResponseFormat(str, Enum):
 
 # MARK: Input Models
 
-class SearchInput(BaseModel):
+class _DateRangeMixin(BaseModel):
+    """Optional submission-date range shared by the listing tools."""
+
+    date_from: date | None = Field(
+        default=None,
+        description=(
+            "Only papers submitted on or after this date (YYYY-MM-DD, UTC). "
+            "Combine with date_to for a range."
+        ),
+    )
+    date_to: date | None = Field(
+        default=None,
+        description="Only papers submitted on or before this date (YYYY-MM-DD, UTC).",
+    )
+
+    @model_validator(mode="after")
+    def date_range_ordered(self) -> Self:
+        """Reject ranges whose start lies after their end."""
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from must not be later than date_to")
+        return self
+
+
+class SearchInput(_DateRangeMixin):
     """Input parameters for the arxiv_search tool."""
 
     model_config = ConfigDict(
@@ -41,6 +75,7 @@ class SearchInput(BaseModel):
             "arXiv search query. Supports field prefixes: "
             "ti: (title), au: (author), abs: (abstract), cat: (category), all: (all fields). "
             "Combine with AND, OR, ANDNOT. "
+            "To restrict by submission date use date_from / date_to. "
             "Examples: 'ti:transformer AND cat:cs.LG', 'au:hinton', 'abs:diffusion model'"
         ),
         min_length=1,
@@ -82,7 +117,11 @@ class GetPaperInput(BaseModel):
 
     paper_id: str = Field(
         ...,
-        description="arXiv paper ID, e.g. '2303.08774' or '2303.08774v2' or 'hep-th/9901001'",
+        description=(
+            "arXiv paper ID or URL, e.g. '2303.08774', 'hep-th/9901001' or "
+            "'2303.08774v2'. A version suffix selects that version; without "
+            "one the latest version is returned."
+        ),
         min_length=5,
         max_length=40,
     )
@@ -91,7 +130,7 @@ class GetPaperInput(BaseModel):
     )
 
 
-class ListByCategoryInput(BaseModel):
+class ListByCategoryInput(_DateRangeMixin):
     """Input parameters for the arxiv_list_by_category tool."""
 
     model_config = ConfigDict(
@@ -133,10 +172,72 @@ class FetchPaperTextInput(BaseModel):
 
     paper_id: str = Field(
         ...,
-        description="arXiv paper ID, e.g. '2303.08774'. Use arxiv_get_paper first to confirm the ID.",
+        description=(
+            "arXiv paper ID, e.g. '2303.08774'. Add a version suffix "
+            "('2303.08774v1') to read that version instead of the latest. "
+            "Use arxiv_get_paper first to confirm the ID."
+        ),
         min_length=5,
         max_length=40,
+    )
+    offset: int = Field(
+        default=0,
+        description=(
+            "Character offset to start reading from (0-based). Pass the "
+            "next_offset reported by the previous call to read the next part."
+        ),
+        ge=0,
     )
     response_format: ResponseFormat = Field(
         default=ResponseFormat.MARKDOWN, description="Output format: markdown | json"
     )
+
+
+class RelatedPapersInput(BaseModel):
+    """Input parameters for the arxiv_related_papers tool."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True, validate_assignment=True, extra="forbid"
+    )
+
+    paper_id: str = Field(
+        ...,
+        description=(
+            "arXiv paper ID or URL, e.g. '1706.03762'. A version suffix is "
+            "ignored: relations are tracked per paper, not per version."
+        ),
+        min_length=5,
+        max_length=40,
+    )
+    relation: Relation = Field(
+        default=Relation.SIMILAR,
+        description=(
+            "similar: papers on the same topic (recommendations); "
+            "references: papers this one cites; "
+            "cited_by: papers that cite this one."
+        ),
+    )
+    max_results: int = Field(
+        default=10, description="Results per page (1–50)", ge=1, le=50
+    )
+    start: int = Field(
+        default=0,
+        description=(
+            "Pagination offset for references and cited_by. Recommendations "
+            "are a single list, so 'similar' only supports start=0."
+        ),
+        ge=0,
+        le=9_000,
+    )
+    response_format: ResponseFormat = Field(
+        default=ResponseFormat.MARKDOWN, description="Output format: markdown | json"
+    )
+
+    @model_validator(mode="after")
+    def similar_has_no_pages(self) -> Self:
+        """Reject an offset for recommendations, which cannot be paged."""
+        if self.relation == Relation.SIMILAR and self.start:
+            raise ValueError(
+                "relation 'similar' does not support start; raise max_results instead"
+            )
+        return self

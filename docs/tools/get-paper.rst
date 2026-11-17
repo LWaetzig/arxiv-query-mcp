@@ -25,7 +25,8 @@ Parameters
      - *(required)*
      - arXiv paper ID. Accepts bare IDs (``2303.08774``), versioned IDs
        (``2303.08774v2``), old-style IDs (``hep-th/9901001``), and full
-       arXiv URLs. Version suffixes are stripped automatically.
+       arXiv URLs. A version suffix selects that version; without one the
+       latest version is returned. The response reports the ``version``.
    * - ``response_format``
      - ``str``
      - ``markdown``
