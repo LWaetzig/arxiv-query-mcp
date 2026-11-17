@@ -2,10 +2,19 @@ name: Release
 
 # On main: test -> version + tag + GitHub release -> build -> PyPI -> docs.
 # Put "[skip release]" in a commit message to skip the release.
+# Run it manually (Actions > Release > Run workflow) to override the bump that
+# the commit messages imply, e.g. release a breaking change as a minor version.
 # Requires a PyPI trusted publisher: workflow release.yml, environment pypi.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_as:
+        description: "Version bump (auto = derived from commit messages)"
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
 
 concurrency:
   group: release
@@ -16,7 +25,7 @@ permissions:
 
 jobs:
   test:
-    if: "!contains(github.event.head_commit.message, '[skip release]') && !startsWith(github.event.head_commit.message, 'chore(release)')"
+    if: "github.event_name == 'workflow_dispatch' || (!contains(github.event.head_commit.message, '[skip release]') && !startsWith(github.event.head_commit.message, 'chore(release)'))"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,10 +52,16 @@ jobs:
       # extract those notes.
       - name: Compute version, create tag
         id: bump
+        env:
+          RELEASE_AS: ${{ inputs.release_as }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          npx --yes commit-and-tag-version --no-verify --skip.commit \
+          OVERRIDE=()
+          if [ -n "$RELEASE_AS" ] && [ "$RELEASE_AS" != "auto" ]; then
+            OVERRIDE=(--release-as "$RELEASE_AS")
+          fi
+          npx --yes commit-and-tag-version --no-verify --skip.commit "${OVERRIDE[@]}" \
             --commitUrlFormat "https://github.com/${{ github.repository }}/commit/{{hash}}" \
             --compareUrlFormat "https://github.com/${{ github.repository }}/compare/{{previousTag}}...{{currentTag}}"
           TAG=$(git describe --tags --abbrev=0)
